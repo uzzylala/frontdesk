@@ -7,8 +7,11 @@ create extension if not exists "pgcrypto";
 create table if not exists conversations (
   id uuid primary key default gen_random_uuid(),
   status text not null default 'open' check (status in ('open', 'closed')),
+  customer_name text not null default 'Customer',
   created_at timestamptz not null default now()
 );
+
+alter table conversations add column if not exists customer_name text not null default 'Customer';
 
 create table if not exists messages (
   id uuid primary key default gen_random_uuid(),

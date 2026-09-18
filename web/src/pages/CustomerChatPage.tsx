@@ -1,12 +1,17 @@
+import { useState } from 'react'
 import { ChatWindow } from '../components/ChatWindow'
-import { useActiveConversation } from '../hooks/useActiveConversation'
 import { useConversationChannel } from '../hooks/useConversationChannel'
+import { useCustomerConversation } from '../hooks/useCustomerConversation'
 import { useConversationStore } from '../store/conversationStore'
 
 export function CustomerChatPage() {
-  const { loading, error } = useActiveConversation('customer')
+  const { loading, error } = useCustomerConversation()
   const conversationId = useConversationStore((s) => s.conversationId)
+  const messages = useConversationStore((s) => s.messages)
+  const messagesLoading = useConversationStore((s) => s.messagesLoading)
+  const connectionStatus = useConversationStore((s) => s.connectionStatus)
   useConversationChannel(conversationId)
+  const [draft, setDraft] = useState('')
 
   return (
     <div className="mx-auto flex h-screen max-w-md flex-col border-x border-slate-200">
@@ -29,9 +34,17 @@ export function CustomerChatPage() {
           <p className="p-4 text-sm text-red-600">
             Couldn't start a conversation: {error}
           </p>
-        ) : (
-          <ChatWindow role="customer" />
-        )}
+        ) : conversationId ? (
+          <ChatWindow
+            conversationId={conversationId}
+            role="customer"
+            messages={messages}
+            messagesLoading={messagesLoading}
+            connectionStatus={connectionStatus}
+            draft={draft}
+            onDraftChange={setDraft}
+          />
+        ) : null}
       </main>
     </div>
   )

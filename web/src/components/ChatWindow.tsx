@@ -1,28 +1,43 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { useConversationStore } from '../store/conversationStore'
-import type { SenderType } from '../types'
+import type { ConnectionStatus } from '../store/conversationStore'
+import type { Message, SenderType } from '../types'
 
 interface ChatWindowProps {
+  conversationId: string
   role: SenderType
+  messages: Message[]
+  messagesLoading: boolean
+  connectionStatus: ConnectionStatus
+  draft: string
+  onDraftChange: (draft: string) => void
 }
 
-export function ChatWindow({ role }: ChatWindowProps) {
-  const conversationId = useConversationStore((s) => s.conversationId)
-  const messages = useConversationStore((s) => s.messages)
-  const messagesLoading = useConversationStore((s) => s.messagesLoading)
-  const connectionStatus = useConversationStore((s) => s.connectionStatus)
-  const [draft, setDraft] = useState('')
+/**
+ * Purely presentational: reads only what's passed in as props. Both the
+ * single-conversation customer page and the multi-conversation agent
+ * console render this — each wires it to its own store shape, so this
+ * component doesn't need to know which one it's talking to.
+ */
+export function ChatWindow({
+  conversationId,
+  role,
+  messages,
+  messagesLoading,
+  connectionStatus,
+  draft,
+  onDraftChange,
+}: ChatWindowProps) {
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
 
   async function sendMessage() {
     const body = draft.trim()
-    if (!body || !conversationId || sending) return
+    if (!body || sending) return
 
     setSending(true)
     setSendError(null)
-    setDraft('')
+    onDraftChange('')
     const { error } = await supabase.from('messages').insert({
       conversation_id: conversationId,
       sender_type: role,
@@ -33,7 +48,7 @@ export function ChatWindow({ role }: ChatWindowProps) {
     if (error) {
       console.error('Failed to send message', error)
       setSendError('Message failed to send. Try again.')
-      setDraft(body)
+      onDraftChange(body)
     }
   }
 
@@ -84,7 +99,7 @@ export function ChatWindow({ role }: ChatWindowProps) {
         >
           <input
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => onDraftChange(e.target.value)}
             placeholder="Type a message…"
             className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
           />

@@ -3,6 +3,7 @@ export type SenderType = 'customer' | 'agent'
 export interface Conversation {
   id: string
   status: 'open' | 'closed'
+  customer_name: string
   created_at: string
 }
 
