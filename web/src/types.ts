@@ -13,3 +13,9 @@ export interface Message {
   body: string
   created_at: string
 }
+
+export interface Agent {
+  id: string
+  name: string
+  created_at: string
+}

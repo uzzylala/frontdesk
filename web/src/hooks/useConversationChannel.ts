@@ -13,11 +13,15 @@ import type { Message } from '../types'
 export function useConversationChannel(conversationId: string | null) {
   const setMessages = useConversationStore((s) => s.setMessages)
   const addMessage = useConversationStore((s) => s.addMessage)
+  const setMessagesLoading = useConversationStore((s) => s.setMessagesLoading)
+  const setConnectionStatus = useConversationStore((s) => s.setConnectionStatus)
 
   useEffect(() => {
     if (!conversationId) return
 
     let cancelled = false
+    setMessagesLoading(true)
+    setConnectionStatus('connecting')
 
     supabase
       .from('messages')
@@ -28,9 +32,11 @@ export function useConversationChannel(conversationId: string | null) {
         if (cancelled) return
         if (error) {
           console.error('Failed to load messages', error)
-          return
+          setConnectionStatus('error')
+        } else {
+          setMessages(data as Message[])
         }
-        setMessages(data as Message[])
+        setMessagesLoading(false)
       })
 
     const channel = supabase
@@ -47,11 +53,17 @@ export function useConversationChannel(conversationId: string | null) {
           addMessage(payload.new as Message)
         },
       )
-      .subscribe()
+      .subscribe((status) => {
+        if (cancelled) return
+        if (status === 'SUBSCRIBED') setConnectionStatus('subscribed')
+        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          setConnectionStatus('error')
+        }
+      })
 
     return () => {
       cancelled = true
       supabase.removeChannel(channel)
     }
-  }, [conversationId, setMessages, addMessage])
+  }, [conversationId, setMessages, addMessage, setMessagesLoading, setConnectionStatus])
 }
