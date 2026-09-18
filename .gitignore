@@ -1,0 +1,9 @@
+# Editor/tooling state not part of the project
+.kilo/
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
