@@ -29,20 +29,22 @@ export function useConsoleChannels(conversationIds: string[]) {
       store.setMessagesLoading(id, true)
       store.setConnectionStatus(id, 'connecting')
 
-      supabase
-        .from('messages')
-        .select('*')
-        .eq('conversation_id', id)
-        .order('created_at', { ascending: true })
-        .then(({ data, error }) => {
-          if (error) {
-            console.error(`Failed to load messages for ${id}`, error)
-            useConsoleStore.getState().setConnectionStatus(id, 'error')
-          } else {
-            useConsoleStore.getState().setMessages(id, data as Message[])
-          }
-          useConsoleStore.getState().setMessagesLoading(id, false)
-        })
+      // Fetched after SUBSCRIBED (see useConversationChannel for why), and
+      // again on every re-subscribe to back-fill messages missed in an outage.
+      const loadHistory = async () => {
+        const { data, error } = await supabase
+          .from('messages')
+          .select('*')
+          .eq('conversation_id', id)
+          .order('created_at', { ascending: true })
+        if (error) {
+          console.error(`Failed to load messages for ${id}`, error)
+          useConsoleStore.getState().setConnectionStatus(id, 'error')
+        } else {
+          useConsoleStore.getState().setMessages(id, data as Message[])
+        }
+        useConsoleStore.getState().setMessagesLoading(id, false)
+      }
 
       const channel = supabase
         .channel(`conversation:${id}`)
@@ -61,6 +63,7 @@ export function useConsoleChannels(conversationIds: string[]) {
         .subscribe((status) => {
           if (status === 'SUBSCRIBED') {
             useConsoleStore.getState().setConnectionStatus(id, 'subscribed')
+            void loadHistory()
           } else if (
             status === 'CHANNEL_ERROR' ||
             status === 'TIMED_OUT' ||

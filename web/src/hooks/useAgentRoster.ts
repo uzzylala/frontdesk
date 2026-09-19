@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useConsoleStore } from '../store/consoleStore'
 import type { Conversation } from '../types'
@@ -6,6 +6,7 @@ import type { Conversation } from '../types'
 export interface QueueItem {
   id: string
   customer_name: string
+  previous_agent_id: string | null
   created_at: string
 }
 
@@ -13,6 +14,8 @@ interface Result {
   queue: QueueItem[]
   loading: boolean
   error: string | null
+  /** Re-fetch both lists — for catching up after a connection outage. */
+  refetch: () => Promise<void>
 }
 
 /**
@@ -23,10 +26,13 @@ interface Result {
  *
  * A single Realtime channel on the conversations table (unfiltered — every
  * INSERT/UPDATE) keeps both "mine" and the queue live: routing, queue
- * pulls, and manual pickups all show up here without polling. Each event
- * is re-classified from payload.new alone (never payload.old), since
- * Realtime only guarantees old-row data with REPLICA IDENTITY FULL, which
- * this table doesn't set — simpler to not depend on it.
+ * pulls, manual pickups, and disconnect reassignment all show up here
+ * without polling. Each event is re-classified from payload.new alone
+ * (never payload.old), since Realtime only guarantees old-row data with
+ * REPLICA IDENTITY FULL, which this table doesn't set.
+ *
+ * Realtime doesn't replay events missed while disconnected, so the caller
+ * should call refetch() after a reconnect.
  */
 export function useAgentRoster(agentId: string | null): Result {
   const [queue, setQueue] = useState<QueueItem[]>([])
@@ -34,11 +40,10 @@ export function useAgentRoster(agentId: string | null): Result {
   const [error, setError] = useState<string | null>(null)
   const initConversations = useConsoleStore((s) => s.initConversations)
 
-  useEffect(() => {
+  const refetch = useCallback(async () => {
     if (!agentId) return
-    let cancelled = false
 
-    Promise.all([
+    const [mineResult, queueResult] = await Promise.all([
       supabase
         .from('conversations')
         .select('*')
@@ -47,33 +52,36 @@ export function useAgentRoster(agentId: string | null): Result {
         .order('created_at', { ascending: true }),
       supabase
         .from('conversations')
-        .select('id, customer_name, created_at')
+        .select('id, customer_name, previous_agent_id, created_at')
         .is('assigned_agent_id', null)
         .eq('status', 'open')
         .order('created_at', { ascending: true }),
-    ]).then(([mineResult, queueResult]) => {
-      if (cancelled) return
+    ])
 
-      if (mineResult.error || queueResult.error) {
-        setError((mineResult.error ?? queueResult.error)?.message ?? 'Failed to load conversations')
-        setLoading(false)
-        return
-      }
-
-      initConversations(
-        (mineResult.data as Conversation[]).map((c) => ({
-          id: c.id,
-          customerName: c.customer_name,
-        })),
-      )
-      setQueue(queueResult.data as QueueItem[])
+    if (mineResult.error || queueResult.error) {
+      setError((mineResult.error ?? queueResult.error)?.message ?? 'Failed to load conversations')
       setLoading(false)
-    })
-
-    return () => {
-      cancelled = true
+      return
     }
+
+    setError(null)
+    initConversations(
+      (mineResult.data as Conversation[]).map((c) => ({
+        id: c.id,
+        customerName: c.customer_name,
+        previousAgentId: c.previous_agent_id,
+      })),
+    )
+    setQueue(queueResult.data as QueueItem[])
+    setLoading(false)
   }, [agentId, initConversations])
+
+  useEffect(() => {
+    // refetch only sets state after its awaits resolve, never synchronously
+    // within this effect — the linter can't see through the call.
+    // oxlint-disable-next-line react/set-state-in-effect
+    void refetch()
+  }, [refetch])
 
   useEffect(() => {
     if (!agentId) return
@@ -93,20 +101,33 @@ export function useAgentRoster(agentId: string | null): Result {
       .subscribe()
 
     function classify(row: Conversation) {
+      const store = useConsoleStore.getState()
+
       if (row.status !== 'open') {
         setQueue((prev) => prev.filter((q) => q.id !== row.id))
+        store.removeConversation(row.id)
         return
       }
 
       if (row.assigned_agent_id === agentId) {
-        useConsoleStore.getState().addAssignedConversation(row.id, row.customer_name)
+        store.addAssignedConversation({
+          id: row.id,
+          customerName: row.customer_name,
+          previousAgentId: row.previous_agent_id,
+        })
         setQueue((prev) => prev.filter((q) => q.id !== row.id))
       } else if (!row.assigned_agent_id) {
+        // Unassigned: it's in the queue — and if it was ours a moment ago
+        // (reassigned away after a disconnect), it's no longer.
+        store.removeConversation(row.id)
         setQueue((prev) =>
-          prev.some((q) => q.id === row.id) ? prev : [...prev, row],
+          prev.some((q) => q.id === row.id)
+            ? prev.map((q) => (q.id === row.id ? { ...q, ...row } : q))
+            : [...prev, row],
         )
       } else {
-        // Assigned to a different agent — not (yet) in our queue or ours.
+        // Assigned to a different agent — not in our queue, and not ours.
+        store.removeConversation(row.id)
         setQueue((prev) => prev.filter((q) => q.id !== row.id))
       }
     }
@@ -116,5 +137,5 @@ export function useAgentRoster(agentId: string | null): Result {
     }
   }, [agentId])
 
-  return { queue, loading, error }
+  return { queue, loading, error, refetch }
 }

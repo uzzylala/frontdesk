@@ -1,6 +1,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import agentOnlineHandler from './api/agent-online.js'
+import reapDisconnectedHandler from './api/reap-disconnected.js'
 import routeConversationHandler from './api/route-conversation.js'
+import type { Req, Res } from './server/http.js'
 
 /**
  * Serves web/api/*.ts locally during `npm run dev`, proxied to by Vite
@@ -13,19 +15,12 @@ import routeConversationHandler from './api/route-conversation.js'
  */
 const PORT = 8787
 
-interface HandlerReq {
-  method?: string
-  body?: unknown
-}
-interface HandlerRes {
-  status(code: number): HandlerRes
-  json(body: unknown): void
-}
-type Handler = (req: HandlerReq, res: HandlerRes) => Promise<void>
+type Handler = (req: Req, res: Res) => Promise<void>
 
 const routes: Record<string, Handler> = {
   '/api/route-conversation': routeConversationHandler,
   '/api/agent-online': agentOnlineHandler,
+  '/api/reap-disconnected': reapDisconnectedHandler,
 }
 
 function readJsonBody(req: IncomingMessage): Promise<unknown> {
@@ -68,10 +63,13 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     return
   }
 
-  const adaptedRes = {
+  const adaptedRes: Res = {
     status(code: number) {
       res.statusCode = code
       return adaptedRes
+    },
+    setHeader(name: string, value: string) {
+      res.setHeader(name, value)
     },
     json(payload: unknown) {
       res.setHeader('Content-Type', 'application/json')

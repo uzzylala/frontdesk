@@ -6,6 +6,8 @@ export interface Conversation {
   status: 'open' | 'closed'
   customer_name: string
   assigned_agent_id: string | null
+  previous_agent_id: string | null
+  reassigned_at: string | null
   created_at: string
 }
 

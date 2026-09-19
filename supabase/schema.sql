@@ -125,3 +125,41 @@ create policy "anon can claim queued conversations" on conversations
   for update to anon
   using (assigned_agent_id is null)
   with check (true);
+
+-- ---------------------------------------------------------------------------
+-- Phase 4: presence durability + disconnect reassignment
+-- ---------------------------------------------------------------------------
+
+-- Realtime Presence is the live source of truth for "who's connected," but
+-- it lives in Realtime's memory and a stateless serverless function can't
+-- hold a socket to read it. So each console also heartbeats into this table
+-- and functions treat "fresh heartbeat" as "connected." It's a separate
+-- table (not a column on agents) so the ~5s write rate doesn't fire a
+-- realtime UPDATE event on agents for every subscriber.
+create table if not exists agent_heartbeats (
+  agent_id uuid primary key references agents (id) on delete cascade,
+  last_seen_at timestamptz not null default now()
+);
+
+-- RLS on with no policies: anon can't read or write the table directly. The
+-- only way in is the RPC below, which stamps the DB's own clock (not the
+-- client's) so browser clock skew can't fake liveness or staleness.
+alter table agent_heartbeats enable row level security;
+
+create or replace function agent_heartbeat(p_agent_id uuid)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  insert into agent_heartbeats (agent_id, last_seen_at)
+  values (p_agent_id, now())
+  on conflict (agent_id) do update set last_seen_at = excluded.last_seen_at;
+$$;
+
+grant execute on function agent_heartbeat(uuid) to anon;
+
+-- Audit trail for disconnect reassignment. previous_agent_id is kept even
+-- after a conversation is re-picked-up, so the UI can show it was transferred.
+alter table conversations add column if not exists previous_agent_id uuid references agents (id);
+alter table conversations add column if not exists reassigned_at timestamptz;

@@ -38,3 +38,9 @@ create or replace trigger on_agent_online
     '{}',
     '5000'
   );
+
+-- Disconnect reaping (POST /api/reap-disconnected) needs no webhook: every
+-- connected console triggers it (on a Presence leave, and on a 10s timer), and
+-- it's idempotent. If you'd rather not depend on a console being open, a
+-- pg_cron job calling that endpoint via pg_net every ~15s is a drop-in
+-- backstop — the endpoint decides purely from the heartbeat table.

@@ -3,10 +3,11 @@ import type { QueueItem } from '../hooks/useAgentRoster'
 
 interface QueueListProps {
   queue: QueueItem[]
+  agentNames: Record<string, string>
   onPickUp: (id: string) => Promise<boolean>
 }
 
-export function QueueList({ queue, onPickUp }: QueueListProps) {
+export function QueueList({ queue, agentNames, onPickUp }: QueueListProps) {
   const [pickingUpId, setPickingUpId] = useState<string | null>(null)
   const [missedId, setMissedId] = useState<string | null>(null)
 
@@ -23,7 +24,7 @@ export function QueueList({ queue, onPickUp }: QueueListProps) {
   return (
     <div className="border-b border-slate-200 bg-amber-50 p-3">
       <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-700">
-        Queue ({queue.length}) — no agent online to auto-route these
+        Queue ({queue.length}) — waiting for an available agent
       </h2>
       <ul className="space-y-1">
         {queue.map((item) => (
@@ -32,7 +33,17 @@ export function QueueList({ queue, onPickUp }: QueueListProps) {
             data-queue-item-id={item.id}
             className="flex items-center justify-between rounded-md bg-white px-3 py-2 text-sm"
           >
-            <span className="font-medium text-slate-900">{item.customer_name}</span>
+            <div className="min-w-0">
+              <span className="font-medium text-slate-900">{item.customer_name}</span>
+              {item.previous_agent_id && (
+                <p
+                  data-reassigned-from={item.previous_agent_id}
+                  className="text-xs text-red-600"
+                >
+                  Reassigned — {agentNames[item.previous_agent_id] ?? 'an agent'} disconnected
+                </p>
+              )}
+            </div>
             <div className="flex items-center gap-2">
               {missedId === item.id && (
                 <span className="text-xs text-red-600">Already picked up</span>

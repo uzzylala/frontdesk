@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { mergeMessages } from '../lib/messages'
 import type { Message } from '../types'
 
 export type ConnectionStatus = 'connecting' | 'subscribed' | 'error'
@@ -21,7 +22,8 @@ export const useConversationStore = create<ConversationState>((set) => ({
   messagesLoading: true,
   connectionStatus: 'connecting',
   setConversationId: (id) => set({ conversationId: id }),
-  setMessages: (messages) => set({ messages }),
+  setMessages: (messages) =>
+    set((state) => ({ messages: mergeMessages(state.messages, messages) })),
   addMessage: (message) =>
     set((state) => {
       if (state.messages.some((m) => m.id === message.id)) return state

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { postJson } from '../lib/api'
 import { supabase } from '../lib/supabase'
 import type { Agent, AgentStatus } from '../types'
 
@@ -111,11 +112,7 @@ export function useCurrentAgent(): Result {
       // Stand-in for the Database Webhook that would fire this in
       // production (see api/agent-online.ts header comment).
       try {
-        await fetch('/api/agent-online', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ agentId: currentAgent.id }),
-        })
+        await postJson('/api/agent-online', { agentId: currentAgent.id })
       } catch (err) {
         console.error('Failed to pull queue after going online', err)
       }

@@ -16,6 +16,8 @@ logical replication) instead of a self-hosted socket server.
 
 ```
 web/            agent console + embeddable widget (Vite)
+web/src/widget/ the embeddable widget (own build: vite.widget.config.ts)
+web/widget-demo/  a deliberately hostile fake company site that embeds it
 web/api/        Vercel serverless functions (thin HTTP adapters)
 web/server/     framework-agnostic routing logic + service-role client (server-only)
 web/devserver.ts  local stand-in that serves web/api during `npm run dev`
@@ -29,16 +31,43 @@ supabase/       schema, seed data, and webhook definitions
   by `conversation_id`. An agent handling several conversations holds one
   subscription per conversation, so there is no client-side filtering and no
   cross-talk between chats by construction.
-- **Presence:** Supabase's Realtime service is the always-on process — no
-  server of ours needs to stay alive. Each agent client tracks its own status
-  on a shared `presence:agents` channel for instant UI updates, and also
-  upserts the same status into a Postgres `agents` table so stateless
-  serverless functions (which can't hold a websocket open) can query "who's
-  free?" when routing a new conversation.
-- **Widget isolation:** the widget mounts inside a Shadow DOM custom element
-  with its Tailwind CSS injected into the shadow root, so host-page styles
-  can't leak in and widget styles can't leak out. It carries its own Supabase
-  client and channel subscription, fully decoupled from the console.
+- **Presence:** two signals, deliberately kept separate. *Intent* is
+  `agents.status` (online/busy/away) — what the agent last clicked, persisted
+  in Postgres. *Liveness* is Supabase Realtime Presence — whether their client
+  is actually connected, held in Realtime's memory and shown instantly to
+  every console. The UI combines them: a connected agent shows their intent;
+  a disconnected one shows **Offline** if they'd set themselves away, or
+  **Disconnected** if they never signed off (an unintentional drop).
+- **Durable liveness:** serverless functions can't hold a socket to read
+  Presence, so each console also heartbeats (every 5s, via an RPC that stamps
+  the DB clock) into `agent_heartbeats`. An agent is "connected" server-side
+  only if that heartbeat is under 15s old, and routing requires it — "online"
+  means genuinely connected, not just last-clicked.
+- **Disconnect handling:** when a heartbeat goes stale, that agent's open
+  conversations are automatically reassigned to the least-busy connected
+  agent, or back to the queue if there isn't one. Automatic rather than
+  flagged, because there are no admin roles to act on a flag and a customer
+  waiting on a dead tab is the worst outcome; the 15s window is the grace
+  period. Reassignment is a compare-and-set on the current assignee, so
+  concurrent sweeps can't double-move, and `previous_agent_id` keeps an
+  audit trail shown in the UI. Every connected console triggers the reaper
+  (a nudge ~3s after seeing a Presence `leave`, plus a 10s sweep backstop);
+  the server trusts only the heartbeat, so a wrong report can't kick a healthy
+  agent. An agent who never connected is never reaped.
+- **Widget isolation:** `widget.js` is a single IIFE that adds a
+  `<frontdesk-widget>` custom element with an open shadow root and mounts
+  React inside it. Tailwind's CSS is injected *inside* the shadow root, never
+  into the host document. Four things get past a shadow boundary and are
+  handled explicitly (`src/widget/shadowCss.ts`): Tailwind v4's `@property`
+  rules are ignored in shadow trees (so borders/shadows silently vanish —
+  hoisted to `:host` defaults); `rem` resolves against the *host page's*
+  root font-size (converted to px); inherited properties cross the boundary
+  (`all: initial` on the inner root); and the host element itself sits in the
+  page's cascade (`!important` rules on `:host`, since inner-context
+  `!important` beats outer). It opens its own Realtime subscription, talks
+  to the same tables, and creates its conversation lazily on the first
+  message so it never leaves ghost conversations from visitors who just
+  loaded the page.
 
 - **Routing:** a new conversation is assigned to the online agent with the
   fewest open conversations; ties go to whoever was assigned least recently,
@@ -64,11 +93,30 @@ supabase/       schema, seed data, and webhook definitions
    key, and (server-only) service-role key.
 4. `npm install && npm run dev` — starts Vite plus the local API server.
    Open `/` for the customer chat and `/agent` for the console.
+5. To try the embeddable widget on the hostile demo host page:
+   `npm run widget:demo` (builds `dist-widget/widget.js` and serves the page on
+   http://localhost:5180, on its own origin, with no dependency on the Vite app).
+
+### Embedding
+
+```html
+<script src="https://your-host/widget.js"
+        data-api-url="https://your-host"      <!-- where /api lives; defaults to the script's origin -->
+        data-customer-name="Jane Doe"></script>  <!-- optional -->
+```
+
+### Known limitations
+
+- Chrome throttles timers in long-hidden tabs, which can delay heartbeats for
+  a console left in the background for many minutes; supabase-js's `worker`
+  option (heartbeats from a Web Worker) is the fix, deferred to the polish phase.
+- Widget bundle is ~130 KB gzipped (React + supabase-js); aliasing to Preact
+  would roughly halve it.
 
 ## Build phases
 
 1. **MVP** — single conversation, one agent, Realtime message sync ✅
 2. Multi-conversation agent console ✅
 3. Routing/queue logic via serverless functions ✅
-4. Widget isolation + presence/disconnect handling
+4. Widget isolation + presence/disconnect handling ✅
 5. Realtime polish and accessibility

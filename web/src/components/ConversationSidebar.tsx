@@ -1,6 +1,7 @@
 import type { ConversationEntry } from '../store/consoleStore'
 
 interface ConversationSidebarProps {
+  agentNames: Record<string, string>
   order: string[]
   conversations: Record<string, ConversationEntry>
   activeId: string | null
@@ -8,6 +9,7 @@ interface ConversationSidebarProps {
 }
 
 export function ConversationSidebar({
+  agentNames,
   order,
   conversations,
   activeId,
@@ -46,6 +48,11 @@ export function ConversationSidebar({
                 />
               )}
             </div>
+            {entry.previousAgentId && (
+              <p data-transferred-from={entry.previousAgentId} className="truncate text-xs text-amber-700">
+                Transferred from {agentNames[entry.previousAgentId] ?? 'another agent'}
+              </p>
+            )}
             <p className="truncate text-xs text-slate-400">
               {entry.messagesLoading
                 ? 'Loading…'

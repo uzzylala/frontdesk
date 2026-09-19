@@ -1,23 +1,17 @@
+import { handleCors, type Req, type Res } from '../server/http.js'
 import { assignNewConversation } from '../server/routing.js'
 import { createAdminClient } from '../server/supabaseAdmin.js'
-
-interface Req {
-  method?: string
-  body?: unknown
-}
-interface Res {
-  status(code: number): Res
-  json(body: unknown): void
-}
 
 /**
  * Vercel handler — thin adapter over server/routing.ts. In production this
  * is called by a Supabase Database Webhook on `insert into conversations`,
  * which is the authoritative trigger (see supabase/webhooks.sql). Locally,
- * with nothing deployed yet, the customer page calls this endpoint
- * directly right after inserting the conversation.
+ * with nothing deployed yet, the customer page and the widget call this
+ * endpoint directly right after inserting the conversation.
  */
 export default async function handler(req: Req, res: Res) {
+  if (handleCors(req, res)) return
+
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' })
     return

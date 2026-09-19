@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { postJson } from '../lib/api'
 import { supabase } from '../lib/supabase'
 import { useConversationStore } from '../store/conversationStore'
 
@@ -49,11 +50,9 @@ async function resolveConversation(): Promise<Resolution> {
   // Stand-in for the Database Webhook that would trigger routing in
   // production (see api/route-conversation.ts header comment). A failure
   // here just leaves the conversation queued — a safe degraded state.
-  fetch('/api/route-conversation', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ conversationId: created.id }),
-  }).catch((err) => console.error('Failed to route new conversation', err))
+  postJson('/api/route-conversation', { conversationId: created.id }).catch((err) =>
+    console.error('Failed to route new conversation', err),
+  )
 
   return { id: created.id }
 }

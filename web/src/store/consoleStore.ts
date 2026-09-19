@@ -1,10 +1,12 @@
 import { create } from 'zustand'
+import { mergeMessages } from '../lib/messages'
 import type { Message } from '../types'
 import type { ConnectionStatus } from './conversationStore'
 
 export interface ConversationEntry {
   id: string
   customerName: string
+  previousAgentId: string | null
   messages: Message[]
   messagesLoading: boolean
   connectionStatus: ConnectionStatus
@@ -12,13 +14,20 @@ export interface ConversationEntry {
   unreadCount: number
 }
 
+export interface AssignedConversation {
+  id: string
+  customerName: string
+  previousAgentId: string | null
+}
+
 interface ConsoleState {
   order: string[]
   conversations: Record<string, ConversationEntry>
   activeConversationId: string | null
 
-  initConversations: (list: { id: string; customerName: string }[]) => void
-  addAssignedConversation: (id: string, customerName: string) => void
+  initConversations: (list: AssignedConversation[]) => void
+  addAssignedConversation: (conversation: AssignedConversation) => void
+  removeConversation: (id: string) => void
   reset: () => void
   setActiveConversation: (id: string) => void
   setMessages: (id: string, messages: Message[]) => void
@@ -28,16 +37,22 @@ interface ConsoleState {
   setConnectionStatus: (id: string, status: ConnectionStatus) => void
 }
 
-function emptyEntry(id: string, customerName: string): ConversationEntry {
+function emptyEntry({ id, customerName, previousAgentId }: AssignedConversation): ConversationEntry {
   return {
     id,
     customerName,
+    previousAgentId,
     messages: [],
     messagesLoading: true,
     connectionStatus: 'connecting',
     draft: '',
     unreadCount: 0,
   }
+}
+
+/** Keep the current selection if it's still valid, otherwise fall back to the first. */
+function validActive(active: string | null, order: string[]): string | null {
+  return active && order.includes(active) ? active : (order[0] ?? null)
 }
 
 export const useConsoleStore = create<ConsoleState>((set) => ({
@@ -48,19 +63,41 @@ export const useConsoleStore = create<ConsoleState>((set) => ({
   initConversations: (list) =>
     set((state) => {
       const conversations = { ...state.conversations }
-      for (const { id, customerName } of list) {
-        if (!conversations[id]) conversations[id] = emptyEntry(id, customerName)
+      for (const c of list) {
+        conversations[c.id] = conversations[c.id]
+          ? { ...conversations[c.id], previousAgentId: c.previousAgentId }
+          : emptyEntry(c)
       }
-      return { order: list.map((c) => c.id), conversations }
+      const order = list.map((c) => c.id)
+      return {
+        order,
+        conversations,
+        activeConversationId: validActive(state.activeConversationId, order),
+      }
     }),
 
-  addAssignedConversation: (id, customerName) =>
+  addAssignedConversation: (conversation) =>
     set((state) => {
-      if (state.order.includes(id)) return state
-      const conversations = state.conversations[id]
+      if (state.order.includes(conversation.id)) return state
+      const conversations = state.conversations[conversation.id]
         ? state.conversations
-        : { ...state.conversations, [id]: emptyEntry(id, customerName) }
-      return { order: [...state.order, id], conversations }
+        : { ...state.conversations, [conversation.id]: emptyEntry(conversation) }
+      const order = [...state.order, conversation.id]
+      return {
+        order,
+        conversations,
+        activeConversationId: validActive(state.activeConversationId, order),
+      }
+    }),
+
+  removeConversation: (id) =>
+    set((state) => {
+      if (!state.order.includes(id)) return state
+      const order = state.order.filter((x) => x !== id)
+      return {
+        order,
+        activeConversationId: validActive(state.activeConversationId, order),
+      }
     }),
 
   reset: () => set({ order: [], conversations: {}, activeConversationId: null }),
@@ -78,12 +115,17 @@ export const useConsoleStore = create<ConsoleState>((set) => ({
       }
     }),
 
+  // Merge rather than replace: history is fetched after the channel
+  // subscribes, so a live message may already be in the list.
   setMessages: (id, messages) =>
     set((state) => {
       const entry = state.conversations[id]
       if (!entry) return state
       return {
-        conversations: { ...state.conversations, [id]: { ...entry, messages } },
+        conversations: {
+          ...state.conversations,
+          [id]: { ...entry, messages: mergeMessages(entry.messages, messages) },
+        },
       }
     }),
 

@@ -9,6 +9,12 @@ import type { Message } from '../types'
  * (postgres_changes filter=conversation_id=eq.{id}), so this subscription
  * only ever receives rows for this one conversation — no client-side
  * filtering, no cross-talk with other conversations.
+ *
+ * History is fetched *after* the channel reports SUBSCRIBED, not alongside
+ * it: fetching first leaves a window where a message inserted between the
+ * fetch and the subscription is never seen. Fetching after closes that
+ * window, and doing it on every SUBSCRIBED also back-fills anything missed
+ * while the connection was down. Overlap is harmless — messages merge by id.
  */
 export function useConversationChannel(conversationId: string | null) {
   const setMessages = useConversationStore((s) => s.setMessages)
@@ -23,21 +29,21 @@ export function useConversationChannel(conversationId: string | null) {
     setMessagesLoading(true)
     setConnectionStatus('connecting')
 
-    supabase
-      .from('messages')
-      .select('*')
-      .eq('conversation_id', conversationId)
-      .order('created_at', { ascending: true })
-      .then(({ data, error }) => {
-        if (cancelled) return
-        if (error) {
-          console.error('Failed to load messages', error)
-          setConnectionStatus('error')
-        } else {
-          setMessages(data as Message[])
-        }
-        setMessagesLoading(false)
-      })
+    async function loadHistory() {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('conversation_id', conversationId)
+        .order('created_at', { ascending: true })
+      if (cancelled) return
+      if (error) {
+        console.error('Failed to load messages', error)
+        setConnectionStatus('error')
+      } else {
+        setMessages(data as Message[])
+      }
+      setMessagesLoading(false)
+    }
 
     const channel = supabase
       .channel(`conversation:${conversationId}`)
@@ -55,8 +61,10 @@ export function useConversationChannel(conversationId: string | null) {
       )
       .subscribe((status) => {
         if (cancelled) return
-        if (status === 'SUBSCRIBED') setConnectionStatus('subscribed')
-        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+        if (status === 'SUBSCRIBED') {
+          setConnectionStatus('subscribed')
+          void loadHistory()
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
           setConnectionStatus('error')
         }
       })

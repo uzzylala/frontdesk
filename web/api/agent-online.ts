@@ -1,22 +1,16 @@
+import { handleCors, type Req, type Res } from '../server/http.js'
 import { pullQueueForAgent } from '../server/routing.js'
 import { createAdminClient } from '../server/supabaseAdmin.js'
-
-interface Req {
-  method?: string
-  body?: unknown
-}
-interface Res {
-  status(code: number): Res
-  json(body: unknown): void
-}
 
 /**
  * Vercel handler — thin adapter over server/routing.ts. In production this
  * is called by a Supabase Database Webhook on `update of status on agents`
- * (see supabase/webhooks.sql). Locally, the status-toggle UI calls this
- * endpoint directly right after updating the agent's status to 'online'.
+ * (see supabase/webhooks.sql). Locally, the console calls this endpoint
+ * directly after an agent goes online or an online agent (re)connects.
  */
 export default async function handler(req: Req, res: Res) {
+  if (handleCors(req, res)) return
+
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' })
     return

@@ -4,7 +4,10 @@ import type { ConnectionStatus } from '../store/conversationStore'
 import type { Message, SenderType } from '../types'
 
 interface ChatWindowProps {
-  conversationId: string
+  /** null until a conversation exists (the widget creates one lazily). */
+  conversationId: string | null
+  /** Called on send when there's no conversation yet; resolves to its id. */
+  onEnsureConversation?: () => Promise<string>
   role: SenderType
   messages: Message[]
   messagesLoading: boolean
@@ -21,6 +24,7 @@ interface ChatWindowProps {
  */
 export function ChatWindow({
   conversationId,
+  onEnsureConversation,
   role,
   messages,
   messagesLoading,
@@ -38,11 +42,20 @@ export function ChatWindow({
     setSending(true)
     setSendError(null)
     onDraftChange('')
-    const { error } = await supabase.from('messages').insert({
-      conversation_id: conversationId,
-      sender_type: role,
-      body,
-    })
+
+    let error: unknown = null
+    try {
+      const id = conversationId ?? (await onEnsureConversation?.())
+      if (!id) throw new Error('No conversation to send to')
+      const result = await supabase.from('messages').insert({
+        conversation_id: id,
+        sender_type: role,
+        body,
+      })
+      error = result.error
+    } catch (err) {
+      error = err
+    }
     setSending(false)
 
     if (error) {

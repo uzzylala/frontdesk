@@ -1,7 +1,9 @@
+import { AgentRoster } from '../components/AgentRoster'
 import { AgentStatusToggle } from '../components/AgentStatusToggle'
 import { ChatWindow } from '../components/ChatWindow'
 import { ConversationSidebar } from '../components/ConversationSidebar'
 import { QueueList } from '../components/QueueList'
+import { useAgentPresence } from '../hooks/useAgentPresence'
 import { useAgentRoster } from '../hooks/useAgentRoster'
 import { useConsoleChannels } from '../hooks/useConsoleChannels'
 import { useCurrentAgent } from '../hooks/useCurrentAgent'
@@ -43,6 +45,7 @@ export function AgentConsolePage() {
 
   return (
     <ConsoleBody
+      agents={agents}
       currentAgent={currentAgent}
       switchAgent={switchAgent}
       setStatus={setStatus}
@@ -51,13 +54,16 @@ export function AgentConsolePage() {
 }
 
 interface ConsoleBodyProps {
+  agents: ReturnType<typeof useCurrentAgent>['agents']
   currentAgent: NonNullable<ReturnType<typeof useCurrentAgent>['currentAgent']>
   switchAgent: () => void
   setStatus: ReturnType<typeof useCurrentAgent>['setStatus']
 }
 
-function ConsoleBody({ currentAgent, switchAgent, setStatus }: ConsoleBodyProps) {
-  const { queue, loading, error } = useAgentRoster(currentAgent.id)
+function ConsoleBody({ agents, currentAgent, switchAgent, setStatus }: ConsoleBodyProps) {
+  const { queue, loading, error, refetch } = useAgentRoster(currentAgent.id)
+  const { connectedIds, channelStatus } = useAgentPresence(currentAgent, refetch)
+  const agentNames = Object.fromEntries(agents.map((a) => [a.id, a.name]))
 
   const order = useConsoleStore((s) => s.order)
   const conversations = useConsoleStore((s) => s.conversations)
@@ -108,7 +114,16 @@ function ConsoleBody({ currentAgent, switchAgent, setStatus }: ConsoleBodyProps)
           <AgentStatusToggle status={currentAgent.status} onChange={setStatus} />
         </header>
 
-        <QueueList queue={queue} onPickUp={pickUp} />
+        {channelStatus === 'disconnected' && (
+          <p role="status" className="bg-red-50 px-4 py-2 text-xs text-red-700">
+            Connection lost — reconnecting. Your conversations may be reassigned to
+            another agent if this lasts more than a few seconds.
+          </p>
+        )}
+
+        <AgentRoster agents={agents} connectedIds={connectedIds} selfId={currentAgent.id} />
+
+        <QueueList queue={queue} agentNames={agentNames} onPickUp={pickUp} />
 
         <div className="flex min-h-0 flex-1 md:flex-row">
           {loading ? (
@@ -125,6 +140,7 @@ function ConsoleBody({ currentAgent, switchAgent, setStatus }: ConsoleBodyProps)
           ) : (
             <>
               <ConversationSidebar
+                agentNames={agentNames}
                 order={order}
                 conversations={conversations}
                 activeId={activeId}

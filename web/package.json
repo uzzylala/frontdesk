@@ -7,7 +7,9 @@
     "dev": "concurrently -k -n vite,api \"vite\" \"npm:dev:api\"",
     "dev:web": "vite",
     "dev:api": "tsx watch --env-file=.env.local devserver.ts",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && vite build --config vite.widget.config.ts",
+    "build:widget": "vite build --config vite.widget.config.ts",
+    "widget:demo": "npm run build:widget && node scripts/serve-widget-demo.mjs",
     "lint": "oxlint",
     "preview": "vite preview"
   },

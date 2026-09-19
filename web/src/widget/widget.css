@@ -1,0 +1,5 @@
+/* Scoped to just what the widget renders, so the bundle does not carry
+   utilities used only by the main app. */
+@import "tailwindcss" source(none);
+@source "./Widget.tsx";
+@source "../components/ChatWindow.tsx";
