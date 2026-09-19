@@ -1,104 +1,157 @@
-import { useEffect, useState } from 'react'
+import { AgentStatusToggle } from '../components/AgentStatusToggle'
 import { ChatWindow } from '../components/ChatWindow'
 import { ConversationSidebar } from '../components/ConversationSidebar'
+import { QueueList } from '../components/QueueList'
+import { useAgentRoster } from '../hooks/useAgentRoster'
 import { useConsoleChannels } from '../hooks/useConsoleChannels'
+import { useCurrentAgent } from '../hooks/useCurrentAgent'
 import { supabase } from '../lib/supabase'
 import { useConsoleStore } from '../store/consoleStore'
 
 export function AgentConsolePage() {
-  const [listLoading, setListLoading] = useState(true)
-  const [listError, setListError] = useState<string | null>(null)
+  const { agents, currentAgent, loading, error, selectAgent, switchAgent, setStatus } =
+    useCurrentAgent()
+
+  if (loading) return <p className="p-4 text-sm text-slate-400">Loading…</p>
+  if (error)
+    return <p className="p-4 text-sm text-red-600">Couldn't load agents: {error}</p>
+
+  if (!currentAgent) {
+    return (
+      <div className="mx-auto max-w-sm p-6">
+        <h1 className="mb-1 text-sm font-semibold text-slate-900">
+          Who are you?
+        </h1>
+        <p className="mb-4 text-xs text-slate-400">
+          No login yet — pick an agent to continue.
+        </p>
+        <div className="space-y-2">
+          {agents.map((agent) => (
+            <button
+              key={agent.id}
+              type="button"
+              onClick={() => selectAgent(agent.id)}
+              className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-left text-sm hover:bg-slate-50"
+            >
+              {agent.name}
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <ConsoleBody
+      currentAgent={currentAgent}
+      switchAgent={switchAgent}
+      setStatus={setStatus}
+    />
+  )
+}
+
+interface ConsoleBodyProps {
+  currentAgent: NonNullable<ReturnType<typeof useCurrentAgent>['currentAgent']>
+  switchAgent: () => void
+  setStatus: ReturnType<typeof useCurrentAgent>['setStatus']
+}
+
+function ConsoleBody({ currentAgent, switchAgent, setStatus }: ConsoleBodyProps) {
+  const { queue, loading, error } = useAgentRoster(currentAgent.id)
 
   const order = useConsoleStore((s) => s.order)
   const conversations = useConsoleStore((s) => s.conversations)
   const activeId = useConsoleStore((s) => s.activeConversationId)
-  const initConversations = useConsoleStore((s) => s.initConversations)
   const setActiveConversation = useConsoleStore((s) => s.setActiveConversation)
   const setDraft = useConsoleStore((s) => s.setDraft)
 
-  useEffect(() => {
-    let cancelled = false
-
-    supabase
-      .from('conversations')
-      .select('*')
-      .eq('status', 'open')
-      .order('created_at', { ascending: true })
-      .then(({ data, error }) => {
-        if (cancelled) return
-        if (error) {
-          setListError(error.message)
-          setListLoading(false)
-          return
-        }
-        const list = data.map((c) => ({ id: c.id, customerName: c.customer_name }))
-        initConversations(list)
-        if (list.length > 0) setActiveConversation(list[0].id)
-        setListLoading(false)
-      })
-
-    return () => {
-      cancelled = true
-    }
-    // Runs once on mount — the list of conversations to track for this
-    // phase is fetched once; live arrival of brand-new conversations comes
-    // with the routing/queue phase.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   useConsoleChannels(order)
+
+  async function pickUp(conversationId: string): Promise<boolean> {
+    const { data, error } = await supabase
+      .from('conversations')
+      .update({ assigned_agent_id: currentAgent.id })
+      .eq('id', conversationId)
+      .is('assigned_agent_id', null)
+      .select()
+
+    if (error) {
+      console.error('Failed to pick up conversation', error)
+      return false
+    }
+    if (!data || data.length === 0) return false
+
+    // Best-effort tie-break bookkeeping — not critical if this fails.
+    supabase
+      .from('agents')
+      .update({ last_assigned_at: new Date().toISOString() })
+      .eq('id', currentAgent.id)
+      .then(() => {})
+
+    return true
+  }
 
   return (
     <div className="flex h-screen">
-      <div className="flex w-full max-w-5xl flex-col border-x border-slate-200 md:flex-row">
-        {listLoading ? (
-          <p className="p-4 text-sm text-slate-400">Loading conversations…</p>
-        ) : listError ? (
-          <p className="p-4 text-sm text-red-600">
-            Couldn't load conversations: {listError}
-          </p>
-        ) : order.length === 0 ? (
-          <div className="p-4">
-            <h1 className="mb-1 text-sm font-semibold text-slate-900">
-              Agent console
-            </h1>
-            <p className="text-sm text-slate-400">
-              No active conversations yet. Waiting for a customer to say
-              hello.
-            </p>
+      <div className="flex w-full max-w-5xl flex-col border-x border-slate-200">
+        <header className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+          <div>
+            <h1 className="text-sm font-semibold text-slate-900">{currentAgent.name}</h1>
+            <button
+              type="button"
+              onClick={switchAgent}
+              className="text-xs text-slate-400 underline"
+            >
+              Switch agent
+            </button>
           </div>
-        ) : (
-          <>
-            <ConversationSidebar
-              order={order}
-              conversations={conversations}
-              activeId={activeId}
-              onSelect={setActiveConversation}
-            />
-            <div className="relative min-h-0 flex-1">
-              {order.map((id) => {
-                const entry = conversations[id]
-                if (!entry) return null
-                return (
-                  <div
-                    key={id}
-                    className={id === activeId ? 'h-full' : 'hidden'}
-                  >
-                    <ChatWindow
-                      conversationId={id}
-                      role="agent"
-                      messages={entry.messages}
-                      messagesLoading={entry.messagesLoading}
-                      connectionStatus={entry.connectionStatus}
-                      draft={entry.draft}
-                      onDraftChange={(draft) => setDraft(id, draft)}
-                    />
-                  </div>
-                )
-              })}
-            </div>
-          </>
-        )}
+          <AgentStatusToggle status={currentAgent.status} onChange={setStatus} />
+        </header>
+
+        <QueueList queue={queue} onPickUp={pickUp} />
+
+        <div className="flex min-h-0 flex-1 md:flex-row">
+          {loading ? (
+            <p className="p-4 text-sm text-slate-400">Loading conversations…</p>
+          ) : error ? (
+            <p className="p-4 text-sm text-red-600">
+              Couldn't load conversations: {error}
+            </p>
+          ) : order.length === 0 ? (
+            <p className="p-4 text-sm text-slate-400">
+              No conversations assigned to you yet.
+              {queue.length > 0 && ' Pick one up from the queue above, or go online to get routed the next one automatically.'}
+            </p>
+          ) : (
+            <>
+              <ConversationSidebar
+                order={order}
+                conversations={conversations}
+                activeId={activeId}
+                onSelect={setActiveConversation}
+              />
+              <div className="relative min-h-0 flex-1">
+                {order.map((id) => {
+                  const entry = conversations[id]
+                  if (!entry) return null
+                  return (
+                    <div key={id} className={id === activeId ? 'h-full' : 'hidden'}>
+                      <ChatWindow
+                        conversationId={id}
+                        role="agent"
+                        messages={entry.messages}
+                        messagesLoading={entry.messagesLoading}
+                        connectionStatus={entry.connectionStatus}
+                        draft={entry.draft}
+                        onDraftChange={(draft) => setDraft(id, draft)}
+                      />
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </div>
   )

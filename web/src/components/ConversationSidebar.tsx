@@ -24,6 +24,7 @@ export function ConversationSidebar({
           <button
             key={id}
             type="button"
+            data-conversation-id={id}
             onClick={() => onSelect(id)}
             className={`block w-full border-b border-slate-100 px-3 py-2 text-left ${
               id === activeId ? 'bg-indigo-50' : 'hover:bg-slate-50'

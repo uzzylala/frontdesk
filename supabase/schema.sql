@@ -24,20 +24,38 @@ create table if not exists messages (
 create index if not exists messages_conversation_id_created_at_idx
   on messages (conversation_id, created_at);
 
--- Phase 1 has a single agent, no auth/roles yet (multi-agent, presence, and
--- identity land in later phases). This table exists now mainly to establish
--- the shape; nothing reads it yet.
+-- Phase 1 had a single agent with no status. Phase 3 adds status (for
+-- routing eligibility) and last_assigned_at (routing tie-break). There is
+-- still no real auth — "which agent is this browser" is a client-side
+-- picker, not a verified identity (see README).
 create table if not exists agents (
   id uuid primary key default gen_random_uuid(),
   name text not null,
+  status text not null default 'away' check (status in ('online', 'busy', 'away')),
+  last_assigned_at timestamptz,
   created_at timestamptz not null default now()
 );
+
+alter table agents add column if not exists status text not null default 'away' check (status in ('online', 'busy', 'away'));
+alter table agents add column if not exists last_assigned_at timestamptz;
 
 insert into agents (name)
 select 'Agent'
 where not exists (select 1 from agents);
 
--- Realtime needs the table registered on the supabase_realtime publication.
+-- assigned_agent_id null + status='open' is the queue: no separate table,
+-- just an absence of assignment.
+alter table conversations add column if not exists assigned_agent_id uuid references agents (id);
+
+create index if not exists conversations_assigned_agent_id_idx
+  on conversations (assigned_agent_id)
+  where status = 'open';
+
+-- Realtime needs each table registered on the supabase_realtime
+-- publication. messages was added in phase 1; conversations and agents
+-- are needed from phase 3 on (live queue updates, live roster/status sync)
+-- — missing this silently breaks postgres_changes for that table with no
+-- error, since it's a publication-membership gap, not a permissions one.
 do $$
 begin
   if not exists (
@@ -45,6 +63,20 @@ begin
     where pubname = 'supabase_realtime' and tablename = 'messages'
   ) then
     alter publication supabase_realtime add table messages;
+  end if;
+
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and tablename = 'conversations'
+  ) then
+    alter publication supabase_realtime add table conversations;
+  end if;
+
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and tablename = 'agents'
+  ) then
+    alter publication supabase_realtime add table agents;
   end if;
 end $$;
 
@@ -74,3 +106,22 @@ create policy "anon can insert messages" on messages
 drop policy if exists "anon can read agents" on agents;
 create policy "anon can read agents" on agents
   for select to anon using (true);
+
+-- Lets an agent toggle their own status from the console. Since there's no
+-- real auth, this can't be scoped to "only their own row" server-side yet —
+-- any anon caller could update any agent's status. Acceptable for a
+-- no-auth demo phase; closes once real auth exists.
+drop policy if exists "anon can update agent status" on agents;
+create policy "anon can update agent status" on agents
+  for update to anon using (true) with check (true);
+
+-- Lets an agent manually pick up a queued (unassigned) conversation. The
+-- `using` clause only matches rows that are CURRENTLY unassigned, so this
+-- is a Postgres-level atomic compare-and-set: if two agents click "pick up"
+-- on the same conversation, the second UPDATE simply matches zero rows
+-- instead of racing the first — Postgres serializes the two statements.
+drop policy if exists "anon can claim queued conversations" on conversations;
+create policy "anon can claim queued conversations" on conversations
+  for update to anon
+  using (assigned_agent_id is null)
+  with check (true);

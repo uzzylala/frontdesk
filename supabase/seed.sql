@@ -1,7 +1,12 @@
--- Frontdesk demo seed data — phase 2
+-- Frontdesk demo seed data — phases 2 & 3
 -- Run after schema.sql, in the Supabase SQL editor. Safe to re-run: each
--- customer is only seeded if a conversation with that name doesn't already
--- exist, so running this twice won't duplicate conversations.
+-- customer/agent is only seeded if one with that name doesn't already
+-- exist, so running this twice won't duplicate anything.
+
+insert into agents (name)
+select v.name
+from (values ('Jordan P.'), ('Sam K.')) as v(name)
+where not exists (select 1 from agents where agents.name = v.name);
 
 do $$
 declare

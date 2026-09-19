@@ -9,13 +9,60 @@ interface Result {
   error: string | null
 }
 
+type Resolution = { id: string } | { error: string }
+
+/**
+ * Shared across effect re-runs. React StrictMode (dev) runs effects twice;
+ * without this, each run would insert its own conversation and the first
+ * would be orphaned — never stored, never routed, permanently stuck in the
+ * queue with no customer attached.
+ */
+let inFlight: Promise<Resolution> | null = null
+
+async function resolveConversation(): Promise<Resolution> {
+  const existingId = localStorage.getItem(STORAGE_KEY)
+
+  if (existingId) {
+    const { data, error } = await supabase
+      .from('conversations')
+      .select('*')
+      .eq('id', existingId)
+      .eq('status', 'open')
+      .maybeSingle()
+
+    if (!error && data) return { id: data.id }
+    // Stale, closed, or missing — fall through and start a fresh one.
+  }
+
+  const { data: created, error: insertError } = await supabase
+    .from('conversations')
+    .insert({})
+    .select()
+    .single()
+
+  if (insertError || !created) {
+    return { error: insertError?.message ?? 'Failed to start conversation' }
+  }
+
+  localStorage.setItem(STORAGE_KEY, created.id)
+
+  // Stand-in for the Database Webhook that would trigger routing in
+  // production (see api/route-conversation.ts header comment). A failure
+  // here just leaves the conversation queued — a safe degraded state.
+  fetch('/api/route-conversation', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ conversationId: created.id }),
+  }).catch((err) => console.error('Failed to route new conversation', err))
+
+  return { id: created.id }
+}
+
 /**
  * Resolves this customer's own conversation. Unlike the agent console
- * (which lists every open conversation from Postgres), a customer's browser
- * only ever needs to remember its own — so this uses localStorage as the
- * source of truth for "which conversation is mine," falling back to
- * creating a new one if there's nothing stored yet, or if the stored id no
- * longer points at an open conversation.
+ * (which lists conversations from Postgres), a customer's browser only ever
+ * needs to remember its own — localStorage is the source of truth for
+ * "which conversation is mine," falling back to creating a new one.
  */
 export function useCustomerConversation(): Result {
   const setConversationId = useConversationStore((s) => s.setConversationId)
@@ -25,47 +72,19 @@ export function useCustomerConversation(): Result {
   useEffect(() => {
     let cancelled = false
 
-    async function resolve() {
-      const existingId = localStorage.getItem(STORAGE_KEY)
+    inFlight ??= resolveConversation().finally(() => {
+      inFlight = null
+    })
 
-      if (existingId) {
-        const { data, error: selectError } = await supabase
-          .from('conversations')
-          .select('*')
-          .eq('id', existingId)
-          .eq('status', 'open')
-          .maybeSingle()
-
-        if (cancelled) return
-
-        if (!selectError && data) {
-          setConversationId(data.id)
-          setLoading(false)
-          return
-        }
-        // Stale, closed, or missing — fall through and start a fresh one.
-      }
-
-      const { data: created, error: insertError } = await supabase
-        .from('conversations')
-        .insert({})
-        .select()
-        .single()
-
+    inFlight.then((result) => {
       if (cancelled) return
-
-      if (insertError || !created) {
-        setError(insertError?.message ?? 'Failed to start conversation')
-        setLoading(false)
-        return
+      if ('error' in result) {
+        setError(result.error)
+      } else {
+        setConversationId(result.id)
       }
-
-      localStorage.setItem(STORAGE_KEY, created.id)
-      setConversationId(created.id)
       setLoading(false)
-    }
-
-    resolve()
+    })
 
     return () => {
       cancelled = true

@@ -18,6 +18,8 @@ interface ConsoleState {
   activeConversationId: string | null
 
   initConversations: (list: { id: string; customerName: string }[]) => void
+  addAssignedConversation: (id: string, customerName: string) => void
+  reset: () => void
   setActiveConversation: (id: string) => void
   setMessages: (id: string, messages: Message[]) => void
   receiveMessage: (id: string, message: Message) => void
@@ -51,6 +53,17 @@ export const useConsoleStore = create<ConsoleState>((set) => ({
       }
       return { order: list.map((c) => c.id), conversations }
     }),
+
+  addAssignedConversation: (id, customerName) =>
+    set((state) => {
+      if (state.order.includes(id)) return state
+      const conversations = state.conversations[id]
+        ? state.conversations
+        : { ...state.conversations, [id]: emptyEntry(id, customerName) }
+      return { order: [...state.order, id], conversations }
+    }),
+
+  reset: () => set({ order: [], conversations: {}, activeConversationId: null }),
 
   setActiveConversation: (id) =>
     set((state) => {
