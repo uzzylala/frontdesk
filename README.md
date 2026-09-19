@@ -87,9 +87,12 @@ supabase/       schema, seed data, and webhook definitions
   Going away/busy stops new routing but never strips existing assignments.
 - **Where routing runs:** serverless, because it needs the service-role key
   and a single consistent view of agent load. In production it's triggered by
-  Supabase Database Webhooks (`supabase/webhooks.sql`), which fire regardless
-  of what created the row. Locally there's no public URL for Supabase to
-  call, so the client calls the same endpoints directly instead.
+  Supabase Database Webhooks (`supabase/webhooks.sql`, pg_net triggers), which
+  fire regardless of what created the row; the endpoints accept the webhook
+  payload as well as a direct `{conversationId}` call. Locally there's no
+  public URL for Supabase to call, so the browser calls the same endpoints
+  instead — opt-in via `VITE_ROUTING_TRIGGER=client` (`.env.development`), so a
+  production build can't quietly depend on it and mask a broken webhook.
 - **Known limitation:** there's no real auth yet. "Which agent am I" is a
   local picker, and every client uses the same anon key, so per-agent scoping
   is correct at the query level but not enforced by RLS.
@@ -104,7 +107,7 @@ supabase/       schema, seed data, and webhook definitions
 4. `npm install && npm run dev` — starts Vite plus the local API server.
    Open `/` for the customer chat and `/agent` for the console.
 5. To try the embeddable widget on the hostile demo host page:
-   `npm run widget:demo` (builds `dist-widget/widget.js` and serves the page on
+   `npm run widget:demo` (builds `dist/widget.js` and serves the page on
    http://localhost:5180, on its own origin, with no dependency on the Vite app).
 
 ### Embedding

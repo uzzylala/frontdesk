@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { postJson } from '../lib/api'
+import { CLIENT_TRIGGERS_ROUTING } from '../lib/routingTrigger'
 import { supabase } from '../lib/supabase'
 import { useConversationStore } from '../store/conversationStore'
 
@@ -47,12 +48,14 @@ async function resolveConversation(): Promise<Resolution> {
 
   localStorage.setItem(STORAGE_KEY, created.id)
 
-  // Stand-in for the Database Webhook that would trigger routing in
-  // production (see api/route-conversation.ts header comment). A failure
-  // here just leaves the conversation queued — a safe degraded state.
-  postJson('/api/route-conversation', { conversationId: created.id }).catch((err) =>
-    console.error('Failed to route new conversation', err),
-  )
+  // Dev-only stand-in for the Database Webhook that routes in production
+  // (see lib/routingTrigger.ts). A failure here just leaves the conversation
+  // queued — a safe degraded state.
+  if (CLIENT_TRIGGERS_ROUTING) {
+    postJson('/api/route-conversation', { conversationId: created.id }).catch((err) =>
+      console.error('Failed to route new conversation', err),
+    )
+  }
 
   return { id: created.id }
 }

@@ -8,6 +8,8 @@ const STORAGE_KEY = 'frontdesk:widget:conversation-id'
 interface Options {
   apiBase: string
   customerName?: string
+  /** Call the routing endpoint from the browser (local dev). Otherwise the Database Webhook routes. */
+  clientRouting?: boolean
 }
 
 /**
@@ -18,7 +20,7 @@ interface Options {
  * (remembered in the host page's localStorage) and creates one lazily, on
  * the visitor's first message.
  */
-export function useWidgetConversation({ apiBase, customerName }: Options) {
+export function useWidgetConversation({ apiBase, customerName, clientRouting }: Options) {
   const conversationId = useConversationStore((s) => s.conversationId)
   const setConversationId = useConversationStore((s) => s.setConversationId)
   const inFlight = useRef<Promise<string> | null>(null)
@@ -60,18 +62,21 @@ export function useWidgetConversation({ apiBase, customerName }: Options) {
       localStorage.setItem(STORAGE_KEY, data.id)
       setConversationId(data.id)
 
-      // Stand-in for the Database Webhook that triggers routing in
-      // production (see api/route-conversation.ts).
-      postJson('/api/route-conversation', { conversationId: data.id }, apiBase).catch((err) =>
-        console.error('Failed to route new conversation', err),
-      )
+      // Dev-only stand-in for the Database Webhook that routes in production
+      // (see lib/routingTrigger.ts). The host page opts in with
+      // data-route-trigger="client"; a real embed doesn't.
+      if (clientRouting) {
+        postJson('/api/route-conversation', { conversationId: data.id }, apiBase).catch((err) =>
+          console.error('Failed to route new conversation', err),
+        )
+      }
       return data.id
     })().finally(() => {
       inFlight.current = null
     })
 
     return inFlight.current
-  }, [conversationId, customerName, apiBase, setConversationId])
+  }, [conversationId, customerName, apiBase, clientRouting, setConversationId])
 
   return { conversationId, ensureConversation }
 }

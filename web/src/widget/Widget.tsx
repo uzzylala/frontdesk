@@ -6,13 +6,14 @@ import { useWidgetConversation } from './useWidgetConversation'
 
 interface WidgetProps {
   apiBase: string
+  clientRouting?: boolean
   customerName?: string
 }
 
-export function Widget({ apiBase, customerName }: WidgetProps) {
+export function Widget({ apiBase, customerName, clientRouting }: WidgetProps) {
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState('')
-  const { conversationId, ensureConversation } = useWidgetConversation({ apiBase, customerName })
+  const { conversationId, ensureConversation } = useWidgetConversation({ apiBase, customerName, clientRouting })
   useConversationChannel(conversationId)
 
   const messages = useConversationStore((s) => s.messages)

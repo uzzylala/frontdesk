@@ -11,7 +11,7 @@ const PORT = Number(process.env.PORT ?? 5180)
 
 const files = {
   '/': { path: join(root, 'widget-demo', 'index.html'), type: 'text/html; charset=utf-8' },
-  '/widget.js': { path: join(root, 'dist-widget', 'widget.js'), type: 'text/javascript; charset=utf-8' },
+  '/widget.js': { path: join(root, 'dist', 'widget.js'), type: 'text/javascript; charset=utf-8' },
 }
 
 createServer(async (req, res) => {

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { postJson } from '../lib/api'
+import { CLIENT_TRIGGERS_ROUTING } from '../lib/routingTrigger'
 import { supabase } from '../lib/supabase'
 import type { Agent, AgentStatus } from '../types'
 
@@ -108,9 +109,9 @@ export function useCurrentAgent(): Result {
       prev.map((a) => (a.id === currentAgent.id ? { ...a, status } : a)),
     )
 
-    if (status === 'online') {
-      // Stand-in for the Database Webhook that would fire this in
-      // production (see api/agent-online.ts header comment).
+    if (status === 'online' && CLIENT_TRIGGERS_ROUTING) {
+      // Dev-only stand-in for the Database Webhook that fires this in
+      // production (see lib/routingTrigger.ts).
       try {
         await postJson('/api/agent-online', { agentId: currentAgent.id })
       } catch (err) {

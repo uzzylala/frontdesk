@@ -32,6 +32,7 @@ class FrontdeskWidgetElement extends HTMLElement {
       <Widget
         apiBase={this.getAttribute('data-api-url') ?? ''}
         customerName={this.getAttribute('data-customer-name') ?? undefined}
+        clientRouting={this.getAttribute('data-route-trigger') === 'client'}
       />,
     )
   }
@@ -54,6 +55,9 @@ function mountWidget() {
   el.setAttribute('data-api-url', apiUrl)
   if (script?.dataset.customerName) {
     el.setAttribute('data-customer-name', script.dataset.customerName)
+  }
+  if (script?.dataset.routeTrigger) {
+    el.setAttribute('data-route-trigger', script.dataset.routeTrigger)
   }
   document.body.appendChild(el)
 }

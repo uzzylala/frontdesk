@@ -1,0 +1,6 @@
+# Keep local secrets and build output out of deployment uploads.
+.env.local
+.env*.local
+dist
+dist-widget
+node_modules

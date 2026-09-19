@@ -1,4 +1,4 @@
-import { handleCors, type Req, type Res } from '../server/http.js'
+import { handleCors, targetId, type Req, type Res } from '../server/http.js'
 import { pullQueueForAgent } from '../server/routing.js'
 import { createAdminClient } from '../server/supabaseAdmin.js'
 
@@ -16,15 +16,15 @@ export default async function handler(req: Req, res: Res) {
     return
   }
 
-  const body = (req.body ?? {}) as { agentId?: string }
-  if (!body.agentId) {
+  const agentId = targetId(req.body, 'agentId', 'agents')
+  if (!agentId) {
     res.status(400).json({ error: 'agentId is required' })
     return
   }
 
   try {
     const admin = createAdminClient()
-    const result = await pullQueueForAgent(admin, body.agentId)
+    const result = await pullQueueForAgent(admin, agentId)
     res.status(200).json(result)
   } catch (err) {
     console.error('agent-online failed', err)
