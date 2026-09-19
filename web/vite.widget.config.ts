@@ -6,7 +6,10 @@ import { defineConfig } from 'vite'
 // Separate from the app build — a host page loads only this file.
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  define: { 'process.env.NODE_ENV': JSON.stringify('production') },
+  define: {
+    'process.env.NODE_ENV': JSON.stringify('production'),
+    __REALTIME_WORKER__: false,
+  },
   build: {
     outDir: 'dist-widget',
     emptyOutDir: true,

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { postJson } from '../lib/api'
+import { startTicker } from '../lib/backgroundTicker'
 import {
   HEARTBEAT_INTERVAL_MS,
   LEAVE_GRACE_MS,
@@ -78,7 +79,11 @@ export function useAgentPresence(agent: Agent, onReconnect: () => void): Result 
       if (!cancelled) setHeartbeatFailing(!ok)
     }
     void beat()
-    const timer = setInterval(() => void beat(), HEARTBEAT_INTERVAL_MS)
+    // Worker-driven, not setInterval: a console left in a background tab is
+    // still a live, working console, and Chrome throttles page timers there to
+    // ~1/min — long enough for the server to declare this agent dropped and
+    // move their conversations away (see lib/backgroundTicker.ts).
+    const stopTicker = startTicker(HEARTBEAT_INTERVAL_MS, () => void beat())
 
     // The browser knows immediately when the network drops; don't wait for
     // the next beat to notice. Coming back, beat right away.
@@ -89,7 +94,7 @@ export function useAgentPresence(agent: Agent, onReconnect: () => void): Result 
 
     return () => {
       cancelled = true
-      clearInterval(timer)
+      stopTicker()
       window.removeEventListener('offline', onOffline)
       window.removeEventListener('online', onOnline)
     }
@@ -100,8 +105,9 @@ export function useAgentPresence(agent: Agent, onReconnect: () => void): Result 
       postJson('/api/reap-disconnected', {}).catch(() => {})
     }
     sweep()
-    const timer = setInterval(sweep, SWEEP_INTERVAL_MS)
-    return () => clearInterval(timer)
+    // Same reason as the heartbeat: a backgrounded console is often the only
+    // one left running sweeps, so it must not go quiet.
+    return startTicker(SWEEP_INTERVAL_MS, sweep)
   }, [])
 
   useEffect(() => {

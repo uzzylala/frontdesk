@@ -9,4 +9,14 @@ if (!url || !anonKey) {
   )
 }
 
-export const supabase = createClient(url ?? '', anonKey ?? '')
+export const supabase = createClient(url ?? '', anonKey ?? '', {
+  realtime: {
+    // Realtime keeps its socket alive with a main-thread timer, which Chrome
+    // throttles in background tabs until the server drops the connection —
+    // and with it this agent's Presence. `worker: true` moves that timer into
+    // a Web Worker. Off for the embeddable widget: it runs on a third-party
+    // page whose Content-Security-Policy may forbid blob workers, and
+    // supabase-js disconnects outright if its worker errors.
+    worker: __REALTIME_WORKER__,
+  },
+})

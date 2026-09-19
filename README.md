@@ -43,6 +43,16 @@ supabase/       schema, seed data, and webhook definitions
   the DB clock) into `agent_heartbeats`. An agent is "connected" server-side
   only if that heartbeat is under 15s old, and routing requires it — "online"
   means genuinely connected, not just last-clicked.
+- **Background tabs:** browsers throttle `setInterval` in a hidden tab (Chrome
+  cuts it to about one wake-up a minute), which would age a healthy console's
+  heartbeat past the 15s limit and get its conversations reassigned. Measured:
+  after ~90s hidden, the 5s heartbeat's gap grew to 73s and the conversation
+  moved to the queue. The heartbeat and the sweep are therefore clocked by a
+  dedicated Web Worker (`src/workers/ticker.worker.ts`; worker timers aren't
+  throttled), and supabase-js's own socket keepalive runs in its `worker`
+  mode. The same test with the fix holds a 6s max gap for 400s hidden. The
+  widget deliberately doesn't use the Realtime worker: a host page's CSP may
+  forbid blob workers.
 - **Disconnect handling:** when a heartbeat goes stale, that agent's open
   conversations are automatically reassigned to the least-busy connected
   agent, or back to the queue if there isn't one. Automatic rather than
@@ -107,9 +117,11 @@ supabase/       schema, seed data, and webhook definitions
 
 ### Known limitations
 
-- Chrome throttles timers in long-hidden tabs, which can delay heartbeats for
-  a console left in the background for many minutes; supabase-js's `worker`
-  option (heartbeats from a Web Worker) is the fix, deferred to the polish phase.
+- A browser can freeze or discard a tab outright (e.g. Chrome's Memory Saver
+  on a long-idle tab). Nothing, workers included, runs then, so the console is
+  treated as disconnected and its conversations are reassigned. That is the
+  right outcome for a console that has really stopped, but it means "left
+  open in a tab" isn't a guarantee.
 - Widget bundle is ~130 KB gzipped (React + supabase-js); aliasing to Preact
   would roughly halve it.
 
