@@ -32,6 +32,7 @@ export function useConsoleChannels(conversationIds: string[]) {
 
       // Fetched after SUBSCRIBED (see useConversationChannel for why), and
       // again on every re-subscribe to back-fill messages missed in an outage.
+      let loadedBefore = false
       const loadHistory = async () => {
         const { data, error } = await supabase
           .from('messages')
@@ -42,7 +43,23 @@ export function useConsoleChannels(conversationIds: string[]) {
           console.error(`Failed to load messages for ${id}`, error)
           useConsoleStore.getState().setConnectionStatus(id, 'error')
         } else {
-          useConsoleStore.getState().setMessages(id, data as Message[])
+          const history = data as Message[]
+          const store = useConsoleStore.getState()
+          const entry = store.conversations[id]
+          if (loadedBefore && entry) {
+            // A re-fetch after an outage: customer messages we've never seen
+            // arrived while we weren't listening. They deserve what a live one
+            // gets — the unread count and a spoken announcement — not a silent
+            // merge into the transcript.
+            const known = new Set(entry.messages.map((m) => m.id))
+            for (const message of history) {
+              if (message.sender_type !== 'customer' || known.has(message.id)) continue
+              store.receiveMessage(id, message)
+              emitConsoleEvent({ type: 'message', conversationId: id, customerName: entry.customerName })
+            }
+          }
+          loadedBefore = true
+          useConsoleStore.getState().setMessages(id, history)
         }
         useConsoleStore.getState().setMessagesLoading(id, false)
       }
