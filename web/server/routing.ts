@@ -48,7 +48,10 @@ async function fetchConnectedAgentIds(
  * fewest open conversations, tie-broken by who's gone longest without a new
  * assignment, tie-broken again by agent id for a fully deterministic result.
  */
-export async function pickLeastBusyOnlineAgent(admin: AdminClient): Promise<Agent | null> {
+export async function pickLeastBusyOnlineAgent(
+  admin: AdminClient,
+  { idleOnly = false }: { idleOnly?: boolean } = {},
+): Promise<Agent | null> {
   const { data: onlineAgents, error: agentsError } = await admin
     .from('agents')
     .select('*')
@@ -92,6 +95,10 @@ export async function pickLeastBusyOnlineAgent(admin: AdminClient): Promise<Agen
     }
   }
 
+  // idleOnly: nobody qualifies unless they have nothing open. (The least-busy
+  // agent is idle if anyone is, so checking the winner is enough.)
+  if (idleOnly && bestKey && bestKey[0] > 0) return null
+
   return best
 }
 
@@ -110,8 +117,9 @@ export type AssignResult =
 export async function assignNewConversation(
   admin: AdminClient,
   conversationId: string,
+  options: { idleOnly?: boolean } = {},
 ): Promise<AssignResult> {
-  const agent = await pickLeastBusyOnlineAgent(admin)
+  const agent = await pickLeastBusyOnlineAgent(admin, options)
   if (!agent) return { status: 'queued' }
 
   const { data: updated, error } = await admin
@@ -192,6 +200,50 @@ export async function pullQueueForAgent(
   if (lastAssignedError) throw lastAssignedError
 
   return { status: 'assigned', conversationId: queued.id }
+}
+
+/**
+ * How long a conversation must have sat in the queue before the periodic sweep
+ * routes it: long enough that the webhook (or a queue pull) has had its turn,
+ * so the sweep is a backstop and never races the primary path for a fresh one.
+ */
+export const QUEUE_SWEEP_MIN_AGE_MS = 15_000
+
+/**
+ * The backstop for a routing trigger that never arrived (a webhook call lost or
+ * failed, a function that errored). Routing is otherwise event-driven, so a
+ * conversation whose event was missed would sit in the queue indefinitely while
+ * an agent who is online, connected and idle looks on.
+ *
+ * Routes queued conversations, oldest first, the way the trigger would — the
+ * same compare-and-set, so running it alongside the webhook or another
+ * console's sweep can't double-assign — but only to an agent who is *idle*
+ * (online, connected, nothing open). That's deliberate: an agent who goes
+ * online is meant to be handed just the oldest queued conversation, and a
+ * backlog that draws down onto them is a change to that rule. The trade-off is
+ * that a missed trigger is only recovered while someone is idle; otherwise the
+ * conversation waits for a manual pickup or the next agent to come online.
+ * Stops at the first one nobody idle can take.
+ */
+export async function routeStrandedQueue(admin: AdminClient): Promise<number> {
+  const cutoff = new Date(Date.now() - QUEUE_SWEEP_MIN_AGE_MS).toISOString()
+  const { data: stranded, error } = await admin
+    .from('conversations')
+    .select('id')
+    .eq('status', 'open')
+    .is('assigned_agent_id', null)
+    .lt('created_at', cutoff)
+    .order('created_at', { ascending: true })
+    .limit(25)
+  if (error) throw error
+
+  let routed = 0
+  for (const conversation of stranded ?? []) {
+    const result = await assignNewConversation(admin, conversation.id, { idleOnly: true })
+    if (result.status === 'assigned') routed++
+    else if (result.status === 'queued') break
+  }
+  return routed
 }
 
 export type ReapResult =

@@ -1,11 +1,15 @@
 import { handleCors, type Req, type Res } from '../server/http.js'
-import { reapDisconnectedAgents } from '../server/routing.js'
+import { reapDisconnectedAgents, routeStrandedQueue } from '../server/routing.js'
 import { createAdminClient } from '../server/supabaseAdmin.js'
 
 /**
  * Reassigns conversations away from agents whose connection has dropped.
  * Called by every connected console: once when it sees a presence `leave`
  * (with an agentId), and on a timer as a backstop (without one).
+ *
+ * The timer sweep also routes conversations that have been stuck in the queue
+ * (see routeStrandedQueue) — the backstop for a routing webhook that never
+ * fired, which nothing else would retry.
  *
  * Safe for anyone to call, any number of times: the decision rests solely
  * on the durable heartbeat, and each move is a compare-and-set.
@@ -23,7 +27,18 @@ export default async function handler(req: Req, res: Res) {
   try {
     const admin = createAdminClient()
     const results = await reapDisconnectedAgents(admin, body.agentId)
-    res.status(200).json({ results })
+
+    // Only on the full sweep, and after the reap so conversations it just moved
+    // to the queue are eligible. A failure here mustn't hide the reap's results.
+    let routed = 0
+    if (!body.agentId) {
+      try {
+        routed = await routeStrandedQueue(admin)
+      } catch (err) {
+        console.error('routeStrandedQueue failed', err)
+      }
+    }
+    res.status(200).json({ results, routed })
   } catch (err) {
     console.error('reap-disconnected failed', err)
     res.status(500).json({ error: 'Reap failed' })
