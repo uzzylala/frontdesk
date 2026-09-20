@@ -120,7 +120,9 @@ function ConsoleBody({
   headingRef,
   setStatus,
 }: ConsoleBodyProps) {
-  const { queue, loading, error } = useAgentRoster(currentAgent.id);
+  const { queue, loading, error, syncFailed, retry } = useAgentRoster(
+    currentAgent.id,
+  );
   const { connectedIds, channelStatus } = useAgentPresence(currentAgent);
   const agentNames = Object.fromEntries(agents.map((a) => [a.id, a.name]));
 
@@ -277,6 +279,12 @@ function ConsoleBody({
             to another agent if this lasts more than a few seconds.
           </p>
         )}
+        {syncFailed && (
+          <p role="status" className="bg-amber-50 px-4 py-2 text-xs text-amber-900">
+            Couldn't refresh your conversations, so what you see may be out of
+            date. Trying again…
+          </p>
+        )}
 
         <AgentRoster
           agents={agents}
@@ -292,9 +300,16 @@ function ConsoleBody({
               Loading conversations…
             </p>
           ) : error ? (
-            <p role="alert" className="p-4 text-sm text-red-700">
-              Couldn't load conversations: {error}
-            </p>
+            <div role="alert" className="p-4 text-sm text-red-700">
+              <p>Couldn't load conversations: {error}</p>
+              <button
+                type="button"
+                onClick={retry}
+                className="mt-2 rounded-md bg-indigo-700 px-3 py-1 text-xs font-medium text-white"
+              >
+                Try again
+              </button>
+            </div>
           ) : order.length === 0 ? (
             <p className="p-4 text-sm text-slate-600">
               No conversations assigned to you yet.

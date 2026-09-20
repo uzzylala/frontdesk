@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { consumeSelfClaim, emitConsoleEvent } from '../lib/consoleEvents'
 import { supabase } from '../lib/supabase'
 import { useConsoleStore } from '../store/consoleStore'
@@ -14,7 +14,11 @@ export interface QueueItem {
 interface Result {
   queue: QueueItem[]
   loading: boolean
+  /** The *first* load failed, so there is nothing to show. Cleared by retry(). */
   error: string | null
+  /** A later re-sync failed: what's on screen is stale, and we're retrying. */
+  syncFailed: boolean
+  retry: () => void
 }
 
 /**
@@ -40,10 +44,15 @@ export function useAgentRoster(agentId: string | null): Result {
   const [queue, setQueue] = useState<QueueItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [syncFailed, setSyncFailed] = useState(false)
   const initConversations = useConsoleStore((s) => s.initConversations)
+  const hasLoaded = useRef(false)
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const retryAttempt = useRef(0)
 
-  const refetch = useCallback(async ({ announceNew = false } = {}) => {
+  const refetch = useCallback(async function run({ announceNew = false } = {}): Promise<void> {
     if (!agentId) return
+    clearTimeout(retryTimer.current)
 
     const [mineResult, queueResult] = await Promise.all([
       supabase
@@ -61,11 +70,27 @@ export function useAgentRoster(agentId: string | null): Result {
     ])
 
     if (mineResult.error || queueResult.error) {
-      setError((mineResult.error ?? queueResult.error)?.message ?? 'Failed to load conversations')
-      setLoading(false)
+      const message = (mineResult.error ?? queueResult.error)?.message ?? 'Failed to load conversations'
+      if (!hasLoaded.current) {
+        setError(message)
+        setLoading(false)
+        return
+      }
+      // A failed *re*-sync must not take the console away: the conversations on
+      // screen are stale, not gone. Keep them, say so, and keep trying (backing
+      // off to 30s) until the network is back.
+      console.error('Failed to re-sync conversations', message)
+      setSyncFailed(true)
+      retryTimer.current = setTimeout(
+        () => void run({ announceNew }),
+        Math.min(30_000, 3_000 * 2 ** retryAttempt.current++),
+      )
       return
     }
 
+    hasLoaded.current = true
+    retryAttempt.current = 0
+    setSyncFailed(false)
     setError(null)
     const mine = mineResult.data as Conversation[]
     // Read after the awaits: a live event may have added some while we waited.
@@ -92,6 +117,18 @@ export function useAgentRoster(agentId: string | null): Result {
       }
     }
   }, [agentId, initConversations])
+
+  // Only reachable from the first-load error screen.
+  const retry = useCallback(() => {
+    setError(null)
+    setLoading(true)
+    void refetch()
+  }, [refetch])
+
+  useEffect(() => {
+    hasLoaded.current = false
+    return () => clearTimeout(retryTimer.current)
+  }, [agentId])
 
   useEffect(() => {
     // refetch only sets state after its awaits resolve, never synchronously
@@ -170,5 +207,5 @@ export function useAgentRoster(agentId: string | null): Result {
     }
   }, [agentId, refetch])
 
-  return { queue, loading, error }
+  return { queue, loading, error, syncFailed, retry }
 }
