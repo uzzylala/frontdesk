@@ -380,7 +380,7 @@ demo page (compressed) loading the widget bundle.
 
 | Page | Form | Perf | A11y | Best practices | SEO |
 |---|---|---|---|---|---|
-| Customer page | mobile / desktop | 89 / 86 | 100 / 100 | 100 / 100 | 100 / 100 |
+| Customer page | mobile / desktop | 99 / 100 | 100 / 100 | 100 / 100 | 100 / 100 |
 | Agent console | mobile / desktop | 94 / 100 | 100 / 100 | 100 / 100 | 63 / 63 |
 | Widget on a host page | mobile / desktop | 99 / 100 | 88 / 88 | 100 / 100 | 90 / 90 |
 
@@ -399,10 +399,11 @@ Windows. That was the app's bug, not the script's: the page now creates nothing 
 a message is sent, the script's cleanup is gone, and it instead fails if any
 conversation appears while only loading pages. The
 remaining cost is `unused-javascript` (React + supabase-js), which I haven't tried
-to reduce. Performance scores vary a lot from run to run (the customer page's mobile score was
-88, 98 and 89 across three runs; its desktop score 100 locally and 86 deployed, on
-a 300 ms blocking-time blip), so read them as a band, not a point; accessibility,
-best-practices and SEO were stable in every run.
+to reduce. Performance scores vary from run to run: the customer page's mobile score
+was 88, 98, 89, 94 (local build) and finally 99 across five runs, and its desktop score
+100 in all but one (86, on a 300 ms blocking-time blip). Read them as a band, not a
+point; the table is the last run against the deployed app, after the ghost-conversation
+fix, and accessibility, best-practices and SEO were stable in every run.
 
 ### Known limitations
 

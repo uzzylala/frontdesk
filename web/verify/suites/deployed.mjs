@@ -7,7 +7,7 @@ import { createClient } from '@supabase/supabase-js'
 
 const APP = process.env.APP ?? 'https://frontdesk-sigma-mocha.vercel.app'
 const HOST = 'http://localhost:5180' // demo host page on its own origin (cross-origin to the deployment)
-const PHASE = process.env.PHASE ?? 'pre'
+const PHASE = process.env.PHASE ?? 'post' // webhooks are installed in production; 'pre' is the negative control from before they were
 import { env, assertSafeToRun } from '../lib.mjs'
 await assertSafeToRun()
 const admin = createClient(env.VITE_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
@@ -93,8 +93,8 @@ async function main() {
   console.log('[1] Deployed console: Realtime + Presence + heartbeat')
   const seen = await until(async () => (await chipState(jordan.page, SAM)) === 'away', 20000)
   check('Jordan\'s console (deployed) sees Sam connected via Presence', seen.ok)
-  await sam.page.click('button:has-text("online")')
-  await jordan.page.click('button:has-text("online")')
+  await sam.page.locator('input[name="agent-status"][value="online"]').check({ force: true })
+  await jordan.page.locator('input[name="agent-status"][value="online"]').check({ force: true })
   const online = await until(async () => (await chipState(jordan.page, SAM)) === 'online' && (await chipState(sam.page, JORDAN)) === 'online', 15000)
   check('status changes propagate live between deployed consoles', online.ok)
   await sleep(1500)
@@ -145,19 +145,19 @@ async function main() {
     void t0
 
     console.log('\n[4] agent-online webhook: an agent going online pulls the queue')
-    await jordan.page.click('button:has-text("away")')
-    await sam.page.click('button:has-text("away")')
+    await jordan.page.locator('input[name="agent-status"][value="away"]').check({ force: true })
+    await sam.page.locator('input[name="agent-status"][value="away"]').check({ force: true })
     await until(async () => (await chipState(jordan.page, SAM)) === 'away', 8000)
     const q = await visitorSendsViaWidget(browser, `queued while offline ${Date.now()}`)
     await sleep(4000)
     check('with everyone away, the conversation stays queued', (await assignee(q.id)) === null, await assignee(q.id))
-    await jordan.page.click('button:has-text("online")')
+    await jordan.page.locator('input[name="agent-status"][value="online"]').check({ force: true })
     const pulled = await until(async () => (await assignee(q.id)) === JORDAN, 20000, 200)
     check(`Jordan clicking Online pulled it via the agent-online webhook (${(pulled.ms / 1000).toFixed(1)}s)`, pulled.ok, await assignee(q.id))
     check('still no browser-side routing call', routingCalls.length === 0, routingCalls)
 
     console.log('\n[5] Standalone customer page (/) on the deployed app: routing + live two-way chat')
-    await sam.page.click('button:has-text("online")')
+    await sam.page.locator('input[name="agent-status"][value="online"]').check({ force: true })
     await sleep(1500)
     const cctx = await browser.newContext()
     const cp = await cctx.newPage()
