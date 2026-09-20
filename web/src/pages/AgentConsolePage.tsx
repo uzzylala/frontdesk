@@ -120,11 +120,8 @@ function ConsoleBody({
   headingRef,
   setStatus,
 }: ConsoleBodyProps) {
-  const { queue, loading, error, refetch } = useAgentRoster(currentAgent.id);
-  const { connectedIds, channelStatus } = useAgentPresence(
-    currentAgent,
-    refetch,
-  );
+  const { queue, loading, error } = useAgentRoster(currentAgent.id);
+  const { connectedIds, channelStatus } = useAgentPresence(currentAgent);
   const agentNames = Object.fromEntries(agents.map((a) => [a.id, a.name]));
 
   const order = useConsoleStore((s) => s.order);

@@ -54,22 +54,16 @@ async function heartbeat(agentId: string): Promise<boolean> {
  *
  * `channelStatus` reports this console's own connection health, combining
  * Realtime's status with heartbeat success (see the note at the bottom).
- *
- * `onReconnect` fires whenever this console's own Realtime link comes back:
- * Realtime doesn't replay events missed while disconnected, so the caller
- * should re-fetch anything it depends on.
  */
-export function useAgentPresence(agent: Agent, onReconnect: () => void): Result {
+export function useAgentPresence(agent: Agent): Result {
   const [connectedIds, setConnectedIds] = useState<ReadonlySet<string> | null>(null)
   const [realtimeStatus, setRealtimeStatus] = useState<PresenceChannelStatus>('connecting')
   const [heartbeatFailing, setHeartbeatFailing] = useState(false)
 
   // Latest values for use inside long-lived callbacks without re-subscribing.
   const statusRef = useRef(agent.status)
-  const onReconnectRef = useRef(onReconnect)
   useEffect(() => {
     statusRef.current = agent.status
-    onReconnectRef.current = onReconnect
   })
 
   useEffect(() => {
@@ -112,7 +106,6 @@ export function useAgentPresence(agent: Agent, onReconnect: () => void): Result 
 
   useEffect(() => {
     let cancelled = false
-    let hasConnectedBefore = false
     let previousIds = new Set<string>()
     const leaveTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
@@ -158,9 +151,6 @@ export function useAgentPresence(agent: Agent, onReconnect: () => void): Result 
         await channel.track({ agentId: agent.id, name: agent.name })
         if (cancelled) return
         setRealtimeStatus('connected')
-
-        if (hasConnectedBefore) onReconnectRef.current()
-        hasConnectedBefore = true
 
         // An agent who's already 'online' when they (re)connect should be
         // handed queued work, same as if they'd just clicked online. Stamp

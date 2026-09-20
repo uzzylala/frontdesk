@@ -15,8 +15,6 @@ interface Result {
   queue: QueueItem[]
   loading: boolean
   error: string | null
-  /** Re-fetch both lists — for catching up after a connection outage. */
-  refetch: () => Promise<void>
 }
 
 /**
@@ -32,8 +30,11 @@ interface Result {
  * (never payload.old), since Realtime only guarantees old-row data with
  * REPLICA IDENTITY FULL, which this table doesn't set.
  *
- * Realtime doesn't replay events missed while disconnected, so the caller
- * should call refetch() after a reconnect.
+ * Realtime doesn't replay events missed while disconnected, so this hook
+ * re-reads both lists itself whenever its channel re-subscribes. Conversations
+ * that turn out to have been assigned to this agent during the gap are
+ * announced, exactly as if they'd arrived live — a screen-reader user
+ * shouldn't learn about them only by stumbling on the list.
  */
 export function useAgentRoster(agentId: string | null): Result {
   const [queue, setQueue] = useState<QueueItem[]>([])
@@ -41,7 +42,7 @@ export function useAgentRoster(agentId: string | null): Result {
   const [error, setError] = useState<string | null>(null)
   const initConversations = useConsoleStore((s) => s.initConversations)
 
-  const refetch = useCallback(async () => {
+  const refetch = useCallback(async ({ announceNew = false } = {}) => {
     if (!agentId) return
 
     const [mineResult, queueResult] = await Promise.all([
@@ -66,8 +67,11 @@ export function useAgentRoster(agentId: string | null): Result {
     }
 
     setError(null)
+    const mine = mineResult.data as Conversation[]
+    // Read after the awaits: a live event may have added some while we waited.
+    const alreadyHad = new Set(useConsoleStore.getState().order)
     initConversations(
-      (mineResult.data as Conversation[]).map((c) => ({
+      mine.map((c) => ({
         id: c.id,
         customerName: c.customer_name,
         previousAgentId: c.previous_agent_id,
@@ -75,6 +79,18 @@ export function useAgentRoster(agentId: string | null): Result {
     )
     setQueue(queueResult.data as QueueItem[])
     setLoading(false)
+
+    if (announceNew) {
+      for (const c of mine) {
+        if (alreadyHad.has(c.id) || consumeSelfClaim(c.id)) continue
+        emitConsoleEvent({
+          type: 'assigned',
+          conversationId: c.id,
+          customerName: c.customer_name,
+          previousAgentId: c.previous_agent_id,
+        })
+      }
+    }
   }, [agentId, initConversations])
 
   useEffect(() => {
@@ -87,6 +103,7 @@ export function useAgentRoster(agentId: string | null): Result {
   useEffect(() => {
     if (!agentId) return
 
+    let subscribedBefore = false
     const channel = supabase
       .channel(`roster:${agentId}`)
       .on(
@@ -99,7 +116,13 @@ export function useAgentRoster(agentId: string | null): Result {
         { event: 'UPDATE', schema: 'public', table: 'conversations' },
         (payload) => classify(payload.new as Conversation),
       )
-      .subscribe()
+      .subscribe((status) => {
+        if (status !== 'SUBSCRIBED') return
+        // The first subscribe only closes the gap since the initial load and
+        // isn't news; a later one is a reconnect, and what it finds is.
+        void refetch({ announceNew: subscribedBefore })
+        subscribedBefore = true
+      })
 
     function classify(row: Conversation) {
       const store = useConsoleStore.getState()
@@ -145,7 +168,7 @@ export function useAgentRoster(agentId: string | null): Result {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [agentId])
+  }, [agentId, refetch])
 
-  return { queue, loading, error, refetch }
+  return { queue, loading, error }
 }
