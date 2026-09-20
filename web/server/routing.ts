@@ -240,8 +240,30 @@ export async function routeStrandedQueue(admin: AdminClient): Promise<number> {
   let routed = 0
   for (const conversation of stranded ?? []) {
     const result = await assignNewConversation(admin, conversation.id, { idleOnly: true })
-    if (result.status === 'assigned') routed++
-    else if (result.status === 'queued') break
+    if (result.status === 'queued') break
+    if (result.status !== 'assigned') continue
+
+    // "Is the agent idle?" and "assign to them" are two statements, so a queue
+    // pull (agent just came online) can land in between and hand them one too.
+    // Re-count now that ours is in: if they have more than this one, give ours
+    // back. The pull is never undone, so it always wins the tie; and if two
+    // sweeps collide both back off and the next sweep retries.
+    const { count, error: countError } = await admin
+      .from('conversations')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'open')
+      .eq('assigned_agent_id', result.agentId)
+    if (countError) throw countError
+    if ((count ?? 0) > 1) {
+      const { error: undoError } = await admin
+        .from('conversations')
+        .update({ assigned_agent_id: null })
+        .eq('id', conversation.id)
+        .eq('assigned_agent_id', result.agentId)
+      if (undoError) throw undoError
+      break
+    }
+    routed++
   }
   return routed
 }
