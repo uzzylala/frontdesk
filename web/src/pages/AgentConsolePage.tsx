@@ -4,7 +4,7 @@ import { AgentStatusToggle } from "../components/AgentStatusToggle";
 import { ChatWindow } from "../components/ChatWindow";
 import { ConversationSidebar } from "../components/ConversationSidebar";
 import { LiveRegion } from "../components/LiveRegion";
-import { QueueList } from "../components/QueueList";
+import { QueueList, type ClaimResult } from "../components/QueueList";
 import { useAgentPresence } from "../hooks/useAgentPresence";
 import { useAgentRoster } from "../hooks/useAgentRoster";
 import { useConsoleAnnouncements } from "../hooks/useConsoleAnnouncements";
@@ -177,7 +177,7 @@ function ConsoleBody({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [claimedId, order]);
 
-  async function pickUp(conversationId: string): Promise<boolean> {
+  async function pickUp(conversationId: string): Promise<ClaimResult> {
     // So the "assigned to you" announcement skips the person who just asked.
     expectSelfClaim(conversationId);
     const { data, error } = await supabase
@@ -190,11 +190,26 @@ function ConsoleBody({
     if (error) {
       console.error("Failed to pick up conversation", error);
       forgetSelfClaim(conversationId);
-      return false;
+      return "error";
     }
     if (!data || data.length === 0) {
+      // Zero rows: it was no longer unassigned. Usually another agent won —
+      // but if the server's queue pull handed it to *us* (we went online at the
+      // same moment), nobody beat us to it, and telling the agent "already
+      // picked up by another agent" about their own conversation would be wrong.
       forgetSelfClaim(conversationId);
-      return false;
+      const { data: now, error: readError } = await supabase
+        .from("conversations")
+        .select("assigned_agent_id")
+        .eq("id", conversationId)
+        .maybeSingle();
+      if (readError) {
+        console.error("Failed to check who owns the conversation", readError);
+        return "error";
+      }
+      if (now?.assigned_agent_id !== currentAgent.id) return "lost";
+      setClaimedId(conversationId);
+      return "claimed";
     }
 
     setClaimedId(conversationId);
@@ -206,7 +221,7 @@ function ConsoleBody({
       .eq("id", currentAgent.id)
       .then(() => {});
 
-    return true;
+    return "claimed";
   }
 
   return (
