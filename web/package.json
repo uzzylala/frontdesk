@@ -12,7 +12,13 @@
     "widget:demo": "npm run build:widget && node scripts/serve-widget-demo.mjs",
     "lint": "oxlint",
     "verify:webhooks": "node --env-file=.env.local scripts/verify-webhook-routing.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "verify": "node --env-file=.env.local verify/run.mjs",
+    "verify:list": "node --env-file=.env.local verify/run.mjs --list",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "lighthouse": "node --env-file=.env.local scripts/lighthouse.mjs",
+    "check:env": "node --env-file=.env.local scripts/check-env-scoping.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",
@@ -23,14 +29,20 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
+    "axe-core": "^4.13.0",
+    "chrome-launcher": "^1.2.1",
     "concurrently": "^10.0.5",
+    "lighthouse": "^13.5.0",
     "oxlint": "^1.81.0",
+    "playwright": "^1.63.0",
     "tsx": "^4.23.13",
     "typescript": "~6.0.2",
-    "vite": "^8.3.0"
+    "vite": "^8.3.0",
+    "vitest": "^5.0.1"
   }
 }

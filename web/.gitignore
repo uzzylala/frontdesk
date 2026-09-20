@@ -26,3 +26,9 @@ dist-ssr
 
 # Vercel CLI project link
 .vercel
+
+# verification output (logs, screenshots, reports)
+verify/.out
+lighthouse-reports
+test-results
+playwright-report
