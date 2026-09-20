@@ -164,7 +164,10 @@ try {
 }
 
 console.log('\n[6] Vercel environment variables (names and scopes only; values are never read)')
-try {
+if (!fs.existsSync(path.join(WEB, '.vercel', 'project.json'))) {
+  // Not a failure: a fresh clone simply isn't linked to the project (.vercel/ is git-ignored).
+  console.log('  (skipped: this checkout is not linked to a Vercel project; run `vercel link` in web/ to include this check)')
+} else try {
   const out = execFileSync('npx', ['vercel', 'env', 'ls'], { cwd: WEB, encoding: 'utf8', shell: true, timeout: 60_000, stdio: ["ignore", "pipe", "ignore"] })
   const rows = out.split('\n').map((l) => l.trim().split(/\s{2,}/)).filter((c) => /^[A-Z][A-Z0-9_]+$/.test(c[0]))
   for (const [name, value, type, envs] of rows) console.log(`     ${name.padEnd(28)} ${type.padEnd(8)} ${envs}${name.startsWith('VITE_') ? '' : '   (value ' + value.toLowerCase() + ')'}`)
