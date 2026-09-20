@@ -21,6 +21,9 @@ web/widget-demo/  a deliberately hostile fake company site that embeds it
 web/api/        Vercel serverless functions (thin HTTP adapters)
 web/server/     framework-agnostic routing logic + service-role client (server-only)
 web/devserver.ts  local stand-in that serves web/api during `npm run dev`
+web/tests/unit/ unit tests (vitest) on an in-memory database
+web/e2e/        the Playwright end-to-end test
+web/verify/     the browser-level verification suites and their runner
 supabase/       schema, seed data, and webhook definitions
 ```
 
@@ -226,15 +229,28 @@ up by hand first is tagged `NULL`), the tag is the latest assignment rather than
 history, and the function logs that carry the event stream are short-lived on
 Vercel's free plan.
 
-**The concurrency safeguard is correlational, not proven.** The re-count and
-give-back described above was added after the phase 4 reconnect check failed in
-2 of 3 runs, and it passed 3 of 3 (28/28) afterwards. A dedicated stress test
-of the pull-versus-sweep race gave 12/12 correct results *with and without* the
-change, so it does not independently demonstrate that the race exists or that
-this fixes it. The improvement is an observed correlation, and the safeguard is
-kept because the reasoning (two statements, no atomic idle-check) is sound and it
-is cheap, not because a test isolated its effect. It should be treated as
-unconfirmed until an experiment reproduces the race without it.
+**The concurrency safeguard is correlational, not proven, and only covers one ordering.**
+"Is the agent idle?" and "assign" are two statements, so the sweep and a queue pull
+(an agent coming online) can interleave, in two ways. If the pull lands first and
+the sweep second, the sweep's re-count sees two and gives its own back; that is
+the case the safeguard handles. If the *sweep* fills the idle agent first and the
+pull lands second, nothing undoes the pull (by design), so the agent ends with two
+conversations instead of one. That is benign (a queued customer reaches an agent
+sooner) but it is not the specified one-pull rule, and it is not prevented; an
+occasional "two" is a known outcome.
+
+The give-back was added after the phase 4 reconnect check failed in 2 of 3 runs; it
+passed 3 of 3 (28/28) afterwards. That is an observed correlation. A dedicated stress
+test of the race (`web/verify/suites/pull-vs-sweep.mjs`) has not confirmed the safeguard's
+effect: it gave 12/12 correct results with *and* without the change, and later 2
+"two" outcomes in 12 with it, so the outcome varies run to run and the test cannot
+separate the two arms. Unit tests do pin the *logic*: given the interleaving
+"pull lands right after the sweep's write", the give-back fires (and the suite goes
+red if it is removed). What no test shows is how often that interleaving happens in
+production. Treat the safeguard as reasoned and unit-tested, not empirically
+confirmed, until an experiment reproduces the race without it. The stress test
+therefore asserts only the hard invariants (nobody left with none, never more than
+two, no lost customer) and reports the rate of two.
 
 ## Local setup
 
@@ -308,6 +324,69 @@ instrument does discriminate.
         data-customer-name="Jane Doe"></script>  <!-- optional -->
 ```
 
+### Tests and verification
+
+Four layers, each answering a different question (details and caveats in
+[`web/verify/README.md`](web/verify/README.md)):
+
+| Layer | Command | What it establishes |
+|---|---|---|
+| Unit | `npm test` | The real routing code (`server/routing.ts`) on an in-memory database: least-busy selection and its tie-breaks, compare-and-set assignment, the queue pull, reassignment on disconnect, the recovery sweep and its give-back, plus announcement wording and batching. 40 tests, no network. |
+| End to end | `npm run test:e2e` | One Playwright test of the whole product: a customer starts a chat → it routes to an online agent → the agent replies → that agent's connection dies → the conversation is reassigned to the other agent, who is told → they reply → the customer sees one unbroken thread. |
+| Verification suites | `npm run verify` | 19 suites in the default set (22 in all, counting the slow and manual ones): routing, presence, the widget, reconnects, accessibility, failure and loading states, races, against the real app and database. ~35 minutes. |
+| Checks | `npm run check:env`, `npm run lighthouse` | Secret scoping (below) and Lighthouse (below). |
+
+How much to trust the tests: the unit suite was **mutation-tested** — I broke
+`routing.ts` eight deliberate ways (most-busy wins, no compare-and-set on assign or
+on reassign, heartbeat staleness ignored, the queue pull taking the newest, the
+sweep not restricted to idle agents, the give-back removed, the age gate removed)
+and it failed each time. The first pass caught only 7 of 8: removing the idle
+restriction changed nothing observable, because the give-back undid the pile-on
+afterwards, so a test now asserts that no write happens at all. The E2E was checked
+the same way: with the local functions (and so the reaper) unavailable it fails at
+exactly the reassignment step. The verification suites write to the real Supabase
+project (there is no separate test database on the free tier), so they refuse to
+run if it holds anything that isn't seed or test data, and restore the seed after
+every suite.
+
+**Secret scoping** (`npm run check:env`, 24 checks, never prints a secret). The
+service-role key bypasses RLS entirely, so the question is everywhere it could
+leak: tracked files (it isn't there; the one tracked env file holds nothing
+secret), **git history across every branch** (never committed), the client source
+(`src/` never reads it; only `server/supabaseAdmin.ts` does), the local build, the
+**deployed** app and `widget.js` (scanned as served: the widget carries the
+low-privilege anon key and nothing stronger), Vercel's variables (the service key is
+a `Secret`-type variable scoped to Production only, with no `VITE_` twin that would
+inline it into the bundle), and the API's error responses. The scanner has a
+positive control (it must find a planted key, an `sb_secret_` token and a
+`service_role` JWT), because "nothing found" means nothing from a scanner that can't
+find anything. One thing this exercise did surface: three of my own scratch test
+scripts had the service key hard-coded. They were never committed (checked), and
+porting them into the repo meant reading credentials from the environment instead.
+
+**Lighthouse** (`npm run lighthouse`; mobile = emulated Moto G on slow 4G, and
+desktop; production build).
+
+| Page | Form | Perf | A11y | Best practices | SEO |
+|---|---|---|---|---|---|
+| Customer page | mobile / desktop | 98 / 100 | 100 / 100 | 100 / 100 | 100 / 100 |
+| Agent console | mobile / desktop | 95 / 100 | 100 / 100 | 100 / 100 | 63 / 63 |
+| Widget on a host page | mobile / desktop | 98 / 100 | 88 / 88 | 100 / 100 | 90 / 90 |
+
+Reading the numbers rather than quoting them: the agent console's SEO of 63 is the
+intended result of `robots.txt` disallowing `/agent` (Lighthouse flags "page is
+blocked from indexing"), not a defect. The widget host page's accessibility 88 is
+the demo page's own markup (an unlabelled input, low-contrast text, no `<main>`);
+none of the failing nodes is inside the widget, which adds 0 failures (also
+confirmed by axe). Three real findings were fixed: the app had no meta description
+or `robots.txt` (SEO 82 → 100 on the customer page); the local demo server served
+the 448 KB widget uncompressed, which made the host page's mobile performance look
+like 81 instead of 98 (production serves it as ~130 KB gzip); and my own script
+skipped its cleanup when Chrome's temp-profile deletion failed on Windows. The
+remaining cost is `unused-javascript` (React + supabase-js), which I haven't tried
+to reduce. The numbers for the deployed app were measured before the SEO fix was
+deployed; the post-fix figures above are from a local production build.
+
 ### Known limitations
 
 - A browser can freeze or discard a tab outright (e.g. Chrome's Memory Saver
@@ -324,4 +403,4 @@ instrument does discriminate.
 2. Multi-conversation agent console ✅
 3. Routing/queue logic via serverless functions ✅
 4. Widget isolation + presence/disconnect handling ✅
-5. Realtime polish and accessibility — accessibility ✅, real-time edge cases and error recovery ✅; final checks (Lighthouse, unit tests, E2E) pending
+5. Realtime polish and accessibility — accessibility ✅, real-time edge cases and error recovery ✅, final checks (Lighthouse, secret scoping, unit tests, E2E, reproducible verification suites) ✅
