@@ -365,13 +365,14 @@ scripts had the service key hard-coded. They were never committed (checked), and
 porting them into the repo meant reading credentials from the environment instead.
 
 **Lighthouse** (`npm run lighthouse`; mobile = emulated Moto G on slow 4G, and
-desktop; production build).
+desktop), measured against the **deployed** app; the widget host page is the local
+demo page (compressed) loading the widget bundle.
 
 | Page | Form | Perf | A11y | Best practices | SEO |
 |---|---|---|---|---|---|
-| Customer page | mobile / desktop | 98 / 100 | 100 / 100 | 100 / 100 | 100 / 100 |
-| Agent console | mobile / desktop | 95 / 100 | 100 / 100 | 100 / 100 | 63 / 63 |
-| Widget on a host page | mobile / desktop | 98 / 100 | 88 / 88 | 100 / 100 | 90 / 90 |
+| Customer page | mobile / desktop | 89 / 86 | 100 / 100 | 100 / 100 | 100 / 100 |
+| Agent console | mobile / desktop | 94 / 100 | 100 / 100 | 100 / 100 | 63 / 63 |
+| Widget on a host page | mobile / desktop | 99 / 100 | 88 / 88 | 100 / 100 | 90 / 90 |
 
 Reading the numbers rather than quoting them: the agent console's SEO of 63 is the
 intended result of `robots.txt` disallowing `/agent` (Lighthouse flags "page is
@@ -384,8 +385,10 @@ the 448 KB widget uncompressed, which made the host page's mobile performance lo
 like 81 instead of 98 (production serves it as ~130 KB gzip); and my own script
 skipped its cleanup when Chrome's temp-profile deletion failed on Windows. The
 remaining cost is `unused-javascript` (React + supabase-js), which I haven't tried
-to reduce. The numbers for the deployed app were measured before the SEO fix was
-deployed; the post-fix figures above are from a local production build.
+to reduce. Performance scores vary a lot from run to run (the customer page's mobile score was
+88, 98 and 89 across three runs; its desktop score 100 locally and 86 deployed, on
+a 300 ms blocking-time blip), so read them as a band, not a point; accessibility,
+best-practices and SEO were stable in every run.
 
 ### Known limitations
 
