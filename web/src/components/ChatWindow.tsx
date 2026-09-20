@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useId, useState, type Ref } from 'react'
 import { supabase } from '../lib/supabase'
+import { announce } from '../store/announcerStore'
 import type { ConnectionStatus } from '../store/conversationStore'
 import type { Message, SenderType } from '../types'
 
@@ -9,6 +10,12 @@ interface ChatWindowProps {
   /** Called on send when there's no conversation yet; resolves to its id. */
   onEnsureConversation?: () => Promise<string>
   role: SenderType
+  /** Who the other party is, for assistive tech: a customer's name, or "support". */
+  counterpart: string
+  /** Lets the parent move keyboard focus into the message box. */
+  inputRef?: Ref<HTMLInputElement>
+  /** Escape pressed in the message box (e.g. to return to the conversation list). */
+  onEscape?: () => void
   messages: Message[]
   messagesLoading: boolean
   connectionStatus: ConnectionStatus
@@ -26,6 +33,9 @@ export function ChatWindow({
   conversationId,
   onEnsureConversation,
   role,
+  counterpart,
+  inputRef,
+  onEscape,
   messages,
   messagesLoading,
   connectionStatus,
@@ -34,6 +44,7 @@ export function ChatWindow({
 }: ChatWindowProps) {
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
+  const inputId = useId()
 
   async function sendMessage() {
     const body = draft.trim()
@@ -62,59 +73,92 @@ export function ChatWindow({
       console.error('Failed to send message', error)
       setSendError('Message failed to send. Try again.')
       onDraftChange(body)
+    } else {
+      // Focus stays in the box and the transcript is not a live region, so
+      // without this a screen-reader user gets no sign the message went.
+      announce('Message sent')
     }
   }
 
   return (
     <div className="flex h-full flex-col">
       {connectionStatus === 'error' && (
-        <p className="bg-red-50 px-4 py-2 text-xs text-red-600">
+        <p role="status" className="bg-red-50 px-4 py-2 text-xs text-red-700">
           Couldn't connect to live updates. Messages may be delayed — try
           refreshing.
         </p>
       )}
 
-      <div className="flex-1 space-y-2 overflow-y-auto p-4">
+      {/* role="log" gives assistive tech a navigable transcript. aria-live is
+          off on purpose: new messages are announced (batched) by the page's
+          single live region instead, so they aren't read twice or one by one.
+          tabIndex makes the scrollable transcript reachable by keyboard. */}
+      <div
+        role="log"
+        aria-live="off"
+        aria-label={`Conversation with ${counterpart}`}
+        aria-busy={messagesLoading}
+        tabIndex={0}
+        className="flex-1 space-y-2 overflow-y-auto p-4"
+      >
         {messagesLoading ? (
-          <p className="text-sm text-slate-400">Loading conversation…</p>
+          <p role="status" className="text-sm text-slate-600">Loading conversation…</p>
         ) : messages.length === 0 ? (
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-slate-600">
             No messages yet — say hello.
           </p>
         ) : (
-          messages.map((message) => (
-            <div
-              key={message.id}
-              className={`flex ${message.sender_type === 'agent' ? 'justify-end' : 'justify-start'}`}
-            >
+          messages.map((message) => {
+            const mine = message.sender_type === role
+            return (
               <div
-                className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm ${
-                  message.sender_type === 'agent'
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-slate-100 text-slate-900'
-                }`}
+                key={message.id}
+                className={`flex ${message.sender_type === 'agent' ? 'justify-end' : 'justify-start'}`}
               >
-                {message.body}
+                <p
+                  className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm ${
+                    message.sender_type === 'agent'
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-slate-100 text-slate-900'
+                  }`}
+                >
+                  <span className="sr-only">{mine ? 'You: ' : `${counterpart}: `}</span>
+                  {message.body}
+                </p>
               </div>
-            </div>
-          ))
+            )
+          })
         )}
       </div>
 
       <div className="border-t border-slate-200 p-3">
-        {sendError && <p className="mb-2 text-xs text-red-600">{sendError}</p>}
+        {sendError && (
+          <p role="alert" className="mb-2 text-xs text-red-700">
+            {sendError}
+          </p>
+        )}
         <form
+          aria-label="Send a message"
           className="flex gap-2"
           onSubmit={(e) => {
             e.preventDefault()
             sendMessage()
           }}
         >
+          <label htmlFor={inputId} className="sr-only">
+            {role === 'agent' ? `Reply to ${counterpart}` : `Message ${counterpart}`}
+          </label>
           <input
+            id={inputId}
+            ref={inputRef}
             value={draft}
             onChange={(e) => onDraftChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') onEscape?.()
+            }}
             placeholder="Type a message…"
-            className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
+            autoComplete="off"
+            className="flex-1 rounded-lg border border-slate-500 px-3 py-2 text-sm"
           />
           <button
             type="submit"

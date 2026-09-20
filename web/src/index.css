@@ -1,1 +1,21 @@
 @import "tailwindcss";
+
+/* One visible keyboard-focus indicator for everything focusable. The controls
+   deliberately don't set `outline-none`, so this applies everywhere, and it is
+   only drawn for keyboard focus (:focus-visible), not for mouse clicks.
+   #4338ca (indigo-700) is 6.3:1 on white and 3:1+ on every tint used here. */
+:focus-visible {
+  outline: 2px solid #4338ca;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

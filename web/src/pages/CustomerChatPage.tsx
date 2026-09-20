@@ -1,7 +1,10 @@
 import { useState } from 'react'
 import { ChatWindow } from '../components/ChatWindow'
+import { LiveRegion } from '../components/LiveRegion'
 import { useConversationChannel } from '../hooks/useConversationChannel'
 import { useCustomerConversation } from '../hooks/useCustomerConversation'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { useSupportReplyAnnouncements } from '../hooks/useSupportReplyAnnouncements'
 import { useConversationStore } from '../store/conversationStore'
 
 export function CustomerChatPage() {
@@ -11,6 +14,8 @@ export function CustomerChatPage() {
   const messagesLoading = useConversationStore((s) => s.messagesLoading)
   const connectionStatus = useConversationStore((s) => s.connectionStatus)
   useConversationChannel(conversationId)
+  useSupportReplyAnnouncements(conversationId, messages, messagesLoading)
+  useDocumentTitle('Chat with us — Frontdesk')
   const [draft, setDraft] = useState('')
 
   return (
@@ -19,7 +24,7 @@ export function CustomerChatPage() {
         <h1 className="text-sm font-semibold text-slate-900">
           Chat with us
         </h1>
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-slate-600">
           <a href="/agent" className="underline">
             Open agent console
           </a>{' '}
@@ -29,15 +34,16 @@ export function CustomerChatPage() {
 
       <main className="min-h-0 flex-1">
         {loading ? (
-          <p className="p-4 text-sm text-slate-400">Connecting…</p>
+          <p role="status" className="p-4 text-sm text-slate-600">Connecting…</p>
         ) : error ? (
-          <p className="p-4 text-sm text-red-600">
+          <p role="alert" className="p-4 text-sm text-red-700">
             Couldn't start a conversation: {error}
           </p>
         ) : conversationId ? (
           <ChatWindow
             conversationId={conversationId}
             role="customer"
+            counterpart="support"
             messages={messages}
             messagesLoading={messagesLoading}
             connectionStatus={connectionStatus}
@@ -46,6 +52,7 @@ export function CustomerChatPage() {
           />
         ) : null}
       </main>
+      <LiveRegion />
     </div>
   )
 }

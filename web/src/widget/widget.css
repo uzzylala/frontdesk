@@ -3,3 +3,12 @@
 @import "tailwindcss" source(none);
 @source "./Widget.tsx";
 @source "../components/ChatWindow.tsx";
+@source "../components/LiveRegion.tsx";
+
+/* Same keyboard-focus indicator as the app (see src/index.css). Plain CSS, no
+   Tailwind variables, so it needs none of the shadow-root workarounds. The
+   host page can't restyle it: its rules don't cross the shadow boundary. */
+.fd-root :focus-visible {
+  outline: 2px solid #4338ca;
+  outline-offset: 2px;
+}

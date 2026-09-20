@@ -1,20 +1,12 @@
-import { effectiveAgentState, type EffectiveAgentState } from '../lib/agentState'
+import { AGENT_STATE_LABEL, effectiveAgentState, type EffectiveAgentState } from '../lib/agentState'
 import type { Agent } from '../types'
 
-const STATE_LABEL: Record<EffectiveAgentState, string> = {
-  online: 'Online',
-  busy: 'Busy',
-  away: 'Away',
-  offline: 'Offline',
-  disconnected: 'Disconnected',
-}
-
 const STATE_STYLE: Record<EffectiveAgentState, { chip: string; dot: string }> = {
-  online: { chip: 'bg-emerald-50 text-emerald-800', dot: 'bg-emerald-500' },
-  busy: { chip: 'bg-amber-50 text-amber-800', dot: 'bg-amber-500' },
+  online: { chip: 'bg-emerald-50 text-emerald-800', dot: 'bg-emerald-600' },
+  busy: { chip: 'bg-amber-50 text-amber-900', dot: 'bg-amber-600' },
   away: { chip: 'bg-slate-100 text-slate-700', dot: 'bg-slate-400' },
-  offline: { chip: 'bg-slate-50 text-slate-400', dot: 'bg-slate-300' },
-  disconnected: { chip: 'bg-red-50 text-red-700 ring-1 ring-red-200', dot: 'bg-red-500' },
+  offline: { chip: 'bg-slate-50 text-slate-600', dot: 'bg-slate-400' },
+  disconnected: { chip: 'bg-red-50 text-red-800 ring-1 ring-red-200', dot: 'bg-red-600' },
 }
 
 interface AgentRosterProps {
@@ -40,15 +32,15 @@ export function AgentRoster({ agents, connectedIds, selfId }: AgentRosterProps) 
             data-agent-id={agent.id}
             data-agent-state={state ?? 'unknown'}
             className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
-              style?.chip ?? 'bg-slate-50 text-slate-400'
+              style?.chip ?? 'bg-slate-50 text-slate-600'
             }`}
           >
-            <span className={`h-2 w-2 rounded-full ${style?.dot ?? 'bg-slate-300'}`} />
+            <span aria-hidden="true" className={`h-2 w-2 rounded-full ${style?.dot ?? 'bg-slate-400'}`} />
             <span>
               {agent.name}
               {agent.id === selfId && ' (you)'}
             </span>
-            <span className="opacity-80">· {state ? STATE_LABEL[state] : '…'}</span>
+            <span>· {state ? AGENT_STATE_LABEL[state] : '…'}</span>
           </li>
         )
       })}
