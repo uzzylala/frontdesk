@@ -151,17 +151,9 @@ supabase/       schema, seed data, and webhook definitions
   public URL for Supabase to call, so the browser calls the same endpoints
   instead — opt-in via `VITE_ROUTING_TRIGGER=client` (`.env.development`), so a
   production build can't quietly depend on it and mask a broken webhook.
-- **A missed routing trigger is recovered.** Routing is event-driven, so a
-  lost webhook call used to leave a conversation queued indefinitely while an
-  agent sat online and idle. The 10s `reap-disconnected` sweep that every
-  console already runs now also routes conversations queued for 15s+
-  (`routeStrandedQueue`), through the same compare-and-set as the trigger.
-  Measured recovery: ~25s. It only fills an *idle* agent (online, connected,
-  nothing open), because an agent coming online is specified to receive just
-  the oldest queued conversation and a backlog draining onto them would change
-  that; so if every online agent already has something open, a stranded
-  conversation still waits for a manual pickup or the next agent to come
-  online.
+- **A lost routing trigger is recovered** by the 10s sweep, for idle agents only,
+  and the recovery is tagged so it can be counted — see "Resilience decision"
+  below.
 - **Reconnects and failures** (verified by severing the real Realtime
   WebSocket and by injecting request failures, not by assumption). Realtime
   doesn't replay what it missed, so each hook re-reads on its own
@@ -178,6 +170,71 @@ supabase/       schema, seed data, and webhook definitions
 - **Known limitation:** there's no real auth yet. "Which agent am I" is a
   local picker, and every client uses the same anon key, so per-agent scoping
   is correct at the query level but not enforced by RLS.
+
+### Resilience decision: recovering from a lost routing webhook
+
+**The failure mode.** Routing is event-driven: a Postgres trigger calls a
+serverless function when a conversation is inserted (`supabase/webhooks.sql`).
+pg_net delivery is asynchronous and fire-and-forget by design, so a call can be
+lost or fail (function error, cold start past the timeout, an outage) and
+*nothing retries it*. The conversation then sits in the queue indefinitely,
+while an agent who is online, connected and idle looks on and the customer
+waits. I reproduced exactly this state and measured it: still queued after 46s,
+with no trigger that would ever fire again.
+
+**The decision.** Every console already runs a `reap-disconnected` sweep every
+10s. That sweep now also calls `routeStrandedQueue`, which routes conversations
+that have sat in the queue for 15s or more, oldest first, through the *same*
+`assignNewConversation` compare-and-set the webhook uses. Two consequences of
+reusing it: racing the webhook (or another console's sweep) can't double-assign,
+and no new infrastructure is needed (a cron job, a queue, a second service).
+The 15s age gate means the sweep is a backstop that never races the primary
+path for a fresh conversation. Measured recovery: **~25s** (the gate plus at
+most one sweep interval).
+
+**Why it is bounded to idle agents only.** The sweep assigns only to an agent
+who is online, connected, and has *nothing open*. This is deliberate, not a
+shortcut. An agent who comes online is specified to be handed just the oldest
+queued conversation, and "queued conversation + online agent" is the same
+database state whether a webhook was lost or a backlog is simply waiting. An
+unrestricted sweep can't tell them apart, and my first version drained the
+whole backlog onto whoever was online, which broke that rule (and failed the
+phase 4 suite). Restricting it to idle agents rescues the case that matters
+(nobody is working while a customer waits) without silently changing routing
+semantics. "Idle?" and "assign" are two statements, so a queue pull can land in
+between; the sweep therefore re-counts after its own assignment and gives it
+back if the agent now has more than one. The pull is never undone, so it always
+wins the tie.
+
+**Known limitation.** If every online agent already has something open, a
+stranded conversation is *not* rescued: it waits for a manual pickup or for the
+next agent to come online. The fallback is weaker than the primary path, which
+would have given it to the least-busy agent regardless of load. Closing that gap
+means deciding that a waiting backlog should draw down onto busy agents, which is
+a product decision about the queue, not a resilience tweak, so it is left open.
+
+**It is observable, not silent.** Each server-side assignment is logged as
+`{"event":"routing","via":...}` and tagged in `conversations.assigned_via`
+(`webhook`, `client_trigger`, `queue_pull`, `recovery_sweep`, `reassignment`;
+manual pickups, which happen in the browser, stay `NULL`; apply
+`supabase/assigned-via.sql` once — until then the code just warns and routing is
+unaffected). That makes "how often is the webhook actually failing?" a query
+rather than a guess (it is in `assigned-via.sql`): among never-reassigned
+conversations, the share tagged `recovery_sweep` versus `webhook`. Read it with
+its caveats: it *under*-counts (a lost webhook whose conversation an agent picked
+up by hand first is tagged `NULL`), the tag is the latest assignment rather than a
+history, and the function logs that carry the event stream are short-lived on
+Vercel's free plan.
+
+**The concurrency safeguard is correlational, not proven.** The re-count and
+give-back described above was added after the phase 4 reconnect check failed in
+2 of 3 runs, and it passed 3 of 3 (28/28) afterwards. A dedicated stress test
+of the pull-versus-sweep race gave 12/12 correct results *with and without* the
+change, so it does not independently demonstrate that the race exists or that
+this fixes it. The improvement is an observed correlation, and the safeguard is
+kept because the reasoning (two statements, no atomic idle-check) is sound and it
+is cheap, not because a test isolated its effect. It should be treated as
+unconfirmed until an experiment reproduces the race without it.
 
 ## Local setup
 
