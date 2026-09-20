@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { postJson } from '../lib/api'
 import { CLIENT_TRIGGERS_ROUTING } from '../lib/routingTrigger'
 import { supabase } from '../lib/supabase'
@@ -33,27 +33,42 @@ export function useCurrentAgent(): Result {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    let cancelled = false
+  // A fetch races the live channel: a change heard while the query is in
+  // flight is newer than the rows it returns. So only the latest fetch may
+  // apply, and rows heard live since it started are laid over its result.
+  const latestFetch = useRef(0)
+  const heardLive = useRef(new Map<string, Agent>())
+  const hasLoaded = useRef(false)
 
-    supabase
+  const fetchAgents = useCallback(async () => {
+    const mine = ++latestFetch.current
+    heardLive.current.clear()
+
+    const { data, error } = await supabase
       .from('agents')
       .select('*')
       .order('name', { ascending: true })
-      .then(({ data, error }) => {
-        if (cancelled) return
-        if (error) {
-          setError(error.message)
-        } else {
-          setAgents(data as Agent[])
-        }
-        setLoading(false)
-      })
+    if (mine !== latestFetch.current) return
 
-    return () => {
-      cancelled = true
+    if (error) {
+      // A failed *re*-sync keeps what we have; the connection banner already
+      // tells the agent the picture may be stale. Only a first load fails loudly.
+      if (!hasLoaded.current) setError(error.message)
+      else console.error('Failed to refresh agents', error)
+    } else {
+      hasLoaded.current = true
+      setError(null)
+      setAgents((data as Agent[]).map((a) => heardLive.current.get(a.id) ?? a))
     }
+    setLoading(false)
   }, [])
+
+  useEffect(() => {
+    // fetchAgents only sets state after its await, never synchronously
+    // within this effect — the linter can't see through the call.
+    // oxlint-disable-next-line react/set-state-in-effect
+    void fetchAgents()
+  }, [fetchAgents])
 
   useEffect(() => {
     const channel = supabase
@@ -63,6 +78,7 @@ export function useCurrentAgent(): Result {
         { event: 'UPDATE', schema: 'public', table: 'agents' },
         (payload) => {
           const updated = payload.new as Agent
+          heardLive.current.set(updated.id, updated)
           setAgents((prev) => prev.map((a) => (a.id === updated.id ? updated : a)))
         },
       )
@@ -70,15 +86,26 @@ export function useCurrentAgent(): Result {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'agents' },
         (payload) => {
-          setAgents((prev) => [...prev, payload.new as Agent])
+          const inserted = payload.new as Agent
+          heardLive.current.set(inserted.id, inserted)
+          setAgents((prev) =>
+            prev.some((a) => a.id === inserted.id)
+              ? prev.map((a) => (a.id === inserted.id ? inserted : a))
+              : [...prev, inserted],
+          )
         },
       )
-      .subscribe()
+      // Realtime doesn't replay what it missed while disconnected, so every
+      // (re)subscribe re-reads the table. The first one also covers the gap
+      // between the initial fetch above and this subscription going live.
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') void fetchAgents()
+      })
 
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [])
+  }, [fetchAgents])
 
   const currentAgent = agents.find((a) => a.id === currentAgentId) ?? null
 
