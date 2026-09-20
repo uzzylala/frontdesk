@@ -82,6 +82,61 @@ supabase/       schema, seed data, and webhook definitions
   message so it never leaves ghost conversations from visitors who just
   loaded the page.
 
+- **Accessibility:** built for keyboard and screen-reader use, and checked with
+  a real screen reader (see "How it was verified").
+  - *Semantics.* The console has real landmarks (banner, main, a labelled
+    conversations `nav` holding a `ul`), each page has its own `<title>`, the
+    status control is a native radio group (fieldset + legend), each
+    conversation-list item's accessible name carries who, unread count,
+    "transferred from …", connection trouble and the last message (the coloured
+    badge is decoration), and each transcript is a `role="log"` with
+    `aria-live="off"` so it's navigable but never speaks on its own.
+  - *Keyboard.* Tab order: skip links ("Skip to conversations", "Skip to message
+    box") → Switch agent → status (one stop; arrows change it) → queue
+    "Pick up" buttons → conversation list → transcript → message box. Enter on a
+    conversation opens it and moves focus to its message box; Escape in the box
+    returns to the list; claiming from the queue lands you in that
+    conversation's box. Choosing or switching agent moves focus to the new
+    view's heading instead of dropping it on `<body>`. The widget moves focus
+    into its box on open, back to its launcher on close, and closes on Escape.
+    One `:focus-visible` ring everywhere (also inside the widget's shadow root).
+  - *Announcements* go through one polite, atomic live region mounted at the
+    page root — not one per component, because the console's inactive
+    conversations are `display: none`, where a live region is never spoken.
+    Producers only emit facts (`lib/consoleEvents.ts`); one hook batches them
+    (1.5s quiet window, 6s maximum wait, `lib/announcementBatcher.ts`) and words
+    them (`lib/formatAnnouncements.ts`): "12 new messages: 8 from Amara O. and
+    4 from Deji K.", "Conversation with Tom W. reassigned to you from Sam K.",
+    "Jordan P. is now Disconnected", queue size changes. Live events only —
+    opening the console reads out nothing — and never your own replies or your
+    own queue claims. Customers (page and widget) hear "Support: …" for replies,
+    including while the widget is closed. "Message sent" confirms a send.
+  - *Contrast.* axe's WCAG 2.2 AA colour-contrast rule passes in every state
+    tested (non-text contrast of borders was checked by hand). The old `slate-400` secondary text
+    (2.6:1) is `slate-500/600`; white-on-`emerald-600/amber-500/slate-400`
+    status pills are `emerald-700/amber-700/slate-600`; control borders are
+    `slate-500` (3:1+ non-text contrast).
+  - *How it was verified* (Chrome, Windows). **axe-core 4.13** (WCAG 2.2 A/AA +
+    best practice) over the agent picker, the populated console (unread,
+    transferred and queued items), the "Connection lost" banner, the customer
+    page, and the widget closed / open-empty / open-with-conversation: 0
+    violations; the same scan on the pre-change build found 13 elements failing
+    contrast plus missing `main`/landmarks, and on the old widget one contrast
+    failure in its empty state. A **keyboard-only** walkthrough (21 checks: pick
+    an agent, tab order, skip links, open a conversation, send, Escape, change
+    status with arrows, claim from the queue). Timed **announcement** checks (a
+    12-message burst is one announcement; a 10s flood that never goes quiet is
+    two, and their counts add up to every message). And a pass with **NVDA
+    2026.2** (silent synthesizer, speech captured from its log) driving real
+    Chrome, e.g. "Your status, grouping / Away, radio button, checked, 3 of 3",
+    "Conversations, navigation landmark, list, with 7 items … button, current",
+    "A11y Unread, 11 unread messages, transferred from Sam K., last message:
+    burst 9, button", "10 new messages from A11y Unread.", "Open chat, button,
+    collapsed".
+  - *Not covered.* NVDA + Chrome only: not VoiceOver, JAWS, TalkBack or Firefox.
+    NVDA was driven with synthetic keyboard events over CDP rather than a
+    physical keyboard, and automated checks catch only part of what a person
+    would. Not a substitute for testing with users who rely on these tools.
 - **Routing:** a new conversation is assigned to the online agent with the
   fewest open conversations; ties go to whoever was assigned least recently,
   then to the lowest agent id (fully deterministic). No online agent means the
