@@ -13,7 +13,8 @@ interface Result {
   error: string | null
   selectAgent: (id: string) => void
   switchAgent: () => void
-  setStatus: (status: AgentStatus) => Promise<void>
+  /** Resolves false if the change could not be saved. */
+  setStatus: (status: AgentStatus) => Promise<boolean>
 }
 
 /**
@@ -119,8 +120,8 @@ export function useCurrentAgent(): Result {
     setCurrentAgentId(null)
   }
 
-  async function setStatus(status: AgentStatus) {
-    if (!currentAgent) return
+  async function setStatus(status: AgentStatus): Promise<boolean> {
+    if (!currentAgent) return false
 
     const { error } = await supabase
       .from('agents')
@@ -129,7 +130,7 @@ export function useCurrentAgent(): Result {
 
     if (error) {
       console.error('Failed to update status', error)
-      return
+      return false
     }
 
     setAgents((prev) =>
@@ -145,6 +146,7 @@ export function useCurrentAgent(): Result {
         console.error('Failed to pull queue after going online', err)
       }
     }
+    return true
   }
 
   return { agents, currentAgent, loading, error, selectAgent, switchAgent, setStatus }

@@ -13,7 +13,8 @@ const STATUS_STYLES: Record<AgentStatus, string> = {
 
 interface AgentStatusToggleProps {
   status: AgentStatus
-  onChange: (status: AgentStatus) => void | Promise<void>
+  /** Resolve to false when the change could not be saved. */
+  onChange: (status: AgentStatus) => boolean | void | Promise<boolean | void>
 }
 
 /**
@@ -30,38 +31,49 @@ interface AgentStatusToggleProps {
  */
 export function AgentStatusToggle({ status, onChange }: AgentStatusToggleProps) {
   const [pending, setPending] = useState<AgentStatus | null>(null)
+  const [failed, setFailed] = useState(false)
   const shown = pending ?? status
 
   async function choose(next: AgentStatus) {
     setPending(next)
+    setFailed(false)
     try {
-      await onChange(next)
+      // Once the save is over the control shows the real status again, so a
+      // failure needs saying: otherwise it just snaps back, unexplained.
+      if ((await onChange(next)) === false) setFailed(true)
     } finally {
       setPending(null)
     }
   }
 
   return (
-    <fieldset className="flex gap-1" aria-busy={pending !== null}>
-      <legend className="sr-only">Your status</legend>
-      {STATUSES.map((option) => (
-        <label
-          key={option}
-          className={`cursor-pointer rounded-full px-3 py-1 text-xs font-medium capitalize has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-indigo-700 ${
-            shown === option ? STATUS_STYLES[option] : 'bg-slate-100 text-slate-700'
-          }`}
-        >
-          <input
-            type="radio"
-            name="agent-status"
-            value={option}
-            checked={shown === option}
-            onChange={() => void choose(option)}
-            className="sr-only"
-          />
-          {option}
-        </label>
-      ))}
-    </fieldset>
+    <div className="flex flex-col items-end gap-1">
+      <fieldset className="flex gap-1" aria-busy={pending !== null}>
+        <legend className="sr-only">Your status</legend>
+        {STATUSES.map((option) => (
+          <label
+            key={option}
+            className={`cursor-pointer rounded-full px-3 py-1 text-xs font-medium capitalize has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-indigo-700 ${
+              shown === option ? STATUS_STYLES[option] : 'bg-slate-100 text-slate-700'
+            }`}
+          >
+            <input
+              type="radio"
+              name="agent-status"
+              value={option}
+              checked={shown === option}
+              onChange={() => void choose(option)}
+              className="sr-only"
+            />
+            {option}
+          </label>
+        ))}
+      </fieldset>
+      {failed && (
+        <p role="alert" className="text-xs font-medium text-red-700">
+          Couldn't change your status. Try again.
+        </p>
+      )}
+    </div>
   )
 }
