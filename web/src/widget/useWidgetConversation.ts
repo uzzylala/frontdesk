@@ -5,6 +5,29 @@ import { useConversationStore } from '../store/conversationStore'
 
 const STORAGE_KEY = 'frontdesk:widget:conversation-id'
 
+/**
+ * The visitor's remembered conversation, if it still exists and is open.
+ * Resolves null only when the server *said* there is none. A failed lookup
+ * throws instead: "couldn't ask" must never be read as "there isn't one", or a
+ * network blip would erase the saved id and the next message would start a
+ * second conversation, orphaning the first.
+ */
+async function lookUpRemembered(): Promise<string | null> {
+  const existingId = localStorage.getItem(STORAGE_KEY)
+  if (!existingId) return null
+
+  const { data, error } = await supabase
+    .from('conversations')
+    .select('id')
+    .eq('id', existingId)
+    .eq('status', 'open')
+    .maybeSingle()
+  if (error) throw error
+  if (data) return data.id
+  localStorage.removeItem(STORAGE_KEY) // the server confirmed it's gone or closed
+  return null
+}
+
 interface Options {
   apiBase: string
   customerName?: string
@@ -28,23 +51,23 @@ export function useWidgetConversation({ apiBase, customerName, clientRouting }: 
 
   useEffect(() => {
     let cancelled = false
-    const existingId = localStorage.getItem(STORAGE_KEY)
-    if (!existingId) return
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let attempt = 0
 
-    supabase
-      .from('conversations')
-      .select('id')
-      .eq('id', existingId)
-      .eq('status', 'open')
-      .maybeSingle()
-      .then(({ data }) => {
-        if (cancelled) return
-        if (data) setConversationId(data.id)
-        else localStorage.removeItem(STORAGE_KEY)
-      })
+    const resolve = async () => {
+      try {
+        const id = await lookUpRemembered()
+        if (!cancelled && id) setConversationId(id)
+      } catch {
+        // Couldn't ask. Keep the saved id and try again, backing off to 30s.
+        if (!cancelled) timer = setTimeout(resolve, Math.min(30_000, 3_000 * 2 ** attempt++))
+      }
+    }
+    void resolve()
 
     return () => {
       cancelled = true
+      clearTimeout(timer)
     }
   }, [setConversationId])
 
@@ -53,6 +76,15 @@ export function useWidgetConversation({ apiBase, customerName, clientRouting }: 
     if (inFlight.current) return inFlight.current
 
     inFlight.current = (async () => {
+      // If the lookup above hasn't landed (or failed), settle it now: creating
+      // a conversation while one may already exist is the mistake to avoid. A
+      // failure here fails the send, with the visitor's draft kept.
+      const remembered = await lookUpRemembered()
+      if (remembered) {
+        setConversationId(remembered)
+        return remembered
+      }
+
       const { data, error } = await supabase
         .from('conversations')
         .insert(customerName ? { customer_name: customerName } : {})
@@ -77,7 +109,7 @@ export function useWidgetConversation({ apiBase, customerName, clientRouting }: 
     })
 
     return inFlight.current
-  }, [conversationId, customerName, apiBase, clientRouting, startConversation])
+  }, [conversationId, customerName, apiBase, clientRouting, startConversation, setConversationId])
 
   return { conversationId, ensureConversation }
 }
