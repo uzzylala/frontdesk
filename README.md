@@ -151,6 +151,30 @@ supabase/       schema, seed data, and webhook definitions
   public URL for Supabase to call, so the browser calls the same endpoints
   instead — opt-in via `VITE_ROUTING_TRIGGER=client` (`.env.development`), so a
   production build can't quietly depend on it and mask a broken webhook.
+- **A missed routing trigger is recovered.** Routing is event-driven, so a
+  lost webhook call used to leave a conversation queued indefinitely while an
+  agent sat online and idle. The 10s `reap-disconnected` sweep that every
+  console already runs now also routes conversations queued for 15s+
+  (`routeStrandedQueue`), through the same compare-and-set as the trigger.
+  Measured recovery: ~25s. It only fills an *idle* agent (online, connected,
+  nothing open), because an agent coming online is specified to receive just
+  the oldest queued conversation and a backlog draining onto them would change
+  that; so if every online agent already has something open, a stranded
+  conversation still waits for a manual pickup or the next agent to come
+  online.
+- **Reconnects and failures** (verified by severing the real Realtime
+  WebSocket and by injecting request failures, not by assumption). Realtime
+  doesn't replay what it missed, so each hook re-reads on its own
+  re-subscribe: agent statuses, assignments and missed customer messages are
+  caught up, and — through the same live region as anything live — spoken.
+  A failed *re*-sync keeps the stale-but-real console on screen with a quiet
+  notice and retries with backoff; only a failed *first* load blocks the view,
+  and it has a Try again button. A failed history load is its own state (not
+  "No messages yet"). The widget never treats a failed lookup of the visitor's
+  saved conversation as "none", so a network blip can't start a second one. A
+  Pick up click has three outcomes (claimed / lost / error) with a message and
+  focus for each; the claim itself is an atomic compare-and-set (400
+  simultaneous claims: exactly one winner every time).
 - **Known limitation:** there's no real auth yet. "Which agent am I" is a
   local picker, and every client uses the same anon key, so per-agent scoping
   is correct at the query level but not enforced by RLS.
@@ -243,4 +267,4 @@ instrument does discriminate.
 2. Multi-conversation agent console ✅
 3. Routing/queue logic via serverless functions ✅
 4. Widget isolation + presence/disconnect handling ✅
-5. Realtime polish and accessibility
+5. Realtime polish and accessibility — accessibility ✅, real-time edge cases and error recovery ✅; final checks (Lighthouse, unit tests, E2E) pending
