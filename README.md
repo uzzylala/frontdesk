@@ -49,10 +49,13 @@ supabase/       schema, seed data, and webhook definitions
   after ~90s hidden, the 5s heartbeat's gap grew to 73s and the conversation
   moved to the queue. The heartbeat and the sweep are therefore clocked by a
   dedicated Web Worker (`src/workers/ticker.worker.ts`; worker timers aren't
-  throttled), and supabase-js's own socket keepalive runs in its `worker`
-  mode. The same test with the fix holds a 6s max gap for 400s hidden. The
-  widget deliberately doesn't use the Realtime worker: a host page's CSP may
-  forbid blob workers.
+  throttled). The same test with the fix holds a 6s max gap for 400s hidden.
+  supabase-js's own socket keepalive is also a main-thread timer, so it runs in
+  the library's `worker` mode too — but a control run with only that turned
+  off also stayed connected for 400s, so the heartbeat worker is the part
+  that matters there; the Realtime one is cheap insurance for longer hidden
+  periods. The widget deliberately skips it: a host page's CSP may forbid
+  blob workers.
 - **Disconnect handling:** when a heartbeat goes stale, that agent's open
   conversations are automatically reassigned to the least-busy connected
   agent, or back to the queue if there isn't one. Automatic rather than
@@ -109,6 +112,21 @@ supabase/       schema, seed data, and webhook definitions
 5. To try the embeddable widget on the hostile demo host page:
    `npm run widget:demo` (builds `dist/widget.js` and serves the page on
    http://localhost:5180, on its own origin, with no dependency on the Vite app).
+
+### Deploying (Vercel)
+
+1. From `web/`: `npx vercel link`, set the Production env vars
+   `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` and (sensitive)
+   `SUPABASE_SERVICE_ROLE_KEY`, then `npx vercel deploy --prod`. The project
+   root is `web/`: `vercel.json` handles the SPA rewrite and serves
+   `/widget.js`, and `api/*.ts` become the serverless functions. (If you
+   connect a Git repository, set the project's Root Directory to `web`,
+   otherwise every push builds from the repo root and fails.)
+2. Run [`supabase/webhooks.sql`](supabase/webhooks.sql) in the SQL editor (edit
+   its two URLs if your domain differs). From then on Postgres itself calls
+   `/api/route-conversation` on every new conversation and `/api/agent-online`
+   when an agent goes online. Nothing in the browser does.
+3. Embed on any site with the snippet below, pointing at your domain.
 
 ### Embedding
 

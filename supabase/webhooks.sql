@@ -1,9 +1,9 @@
 -- Frontdesk Database Webhooks — the production trigger for routing.
 --
--- Run this in the Supabase SQL editor AFTER deploying web/. Replace
--- https://YOUR_DEPLOYED_URL with the deployment's origin (no trailing slash)
--- in the two `url` lines below. It cannot run against a local-only setup:
--- Supabase's servers can't call localhost. (Locally the client triggers the
+-- Run this in the Supabase SQL editor once web/ is deployed. The two `url`
+-- lines below point at the production deployment; if you deploy under a
+-- different domain, change them (no trailing slash). It cannot run against a
+-- local-only setup: Supabase's servers can't call localhost. (Locally the client triggers the
 -- same endpoints itself — see VITE_ROUTING_TRIGGER in web/.env.development.)
 --
 -- Why not `supabase_functions.http_request`, the helper behind the dashboard's
@@ -30,7 +30,7 @@ set search_path = public, extensions, net
 as $$
 begin
   perform net.http_post(
-    url := 'https://YOUR_DEPLOYED_URL/api/route-conversation',
+    url := 'https://frontdesk-sigma-mocha.vercel.app/api/route-conversation',
     headers := '{"Content-Type": "application/json"}'::jsonb,
     body := jsonb_build_object(
       'type', 'INSERT',
@@ -61,7 +61,7 @@ set search_path = public, extensions, net
 as $$
 begin
   perform net.http_post(
-    url := 'https://YOUR_DEPLOYED_URL/api/agent-online',
+    url := 'https://frontdesk-sigma-mocha.vercel.app/api/agent-online',
     headers := '{"Content-Type": "application/json"}'::jsonb,
     body := jsonb_build_object(
       'type', 'UPDATE',
