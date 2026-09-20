@@ -3,6 +3,7 @@
 // from the main React app. Usage: npm run widget:demo
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
+import { gzipSync } from 'node:zlib'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -22,7 +23,12 @@ createServer(async (req, res) => {
   }
   try {
     const body = await readFile(entry.path)
-    res.writeHead(200, { 'Content-Type': entry.type, 'Cache-Control': 'no-store' }).end(body)
+    // Compressed like any real host would: an uncompressed 450 KB widget.js makes the local numbers look far worse than
+    // what a visitor is served (production sends ~130 KB gzip).
+    const gzip = String(req.headers['accept-encoding'] ?? '').includes('gzip')
+    res
+      .writeHead(200, { 'Content-Type': entry.type, 'Cache-Control': 'no-store', ...(gzip ? { 'Content-Encoding': 'gzip', Vary: 'Accept-Encoding' } : {}) })
+      .end(gzip ? gzipSync(body) : body)
   } catch {
     res.writeHead(500).end('Missing file — run `npm run build:widget` first.')
   }

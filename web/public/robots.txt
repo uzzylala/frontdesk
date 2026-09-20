@@ -1,0 +1,3 @@
+# The customer chat page is public; the agent console is an internal tool.
+User-agent: *
+Disallow: /agent
