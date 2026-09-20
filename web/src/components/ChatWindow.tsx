@@ -1,8 +1,11 @@
-import { useId, useState, type Ref } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type Ref } from 'react'
 import { supabase } from '../lib/supabase'
 import { announce } from '../store/announcerStore'
 import type { ConnectionStatus } from '../store/conversationStore'
 import type { Message, SenderType } from '../types'
+
+/** Within this many px of the bottom still counts as "reading the newest message". */
+const STICK_TO_BOTTOM_PX = 80
 
 interface ChatWindowProps {
   /** null until a conversation exists (the widget creates one lazily). */
@@ -56,10 +59,42 @@ export function ChatWindow({
   const [sendError, setSendError] = useState<string | null>(null)
   const inputId = useId()
 
+  // Follow the conversation, but never fight a reader. `pinned` is "the reader
+  // is at the newest message"; new content only scrolls the view while it is
+  // true, so someone scrolled up through history isn't yanked away mid-read.
+  const logRef = useRef<HTMLDivElement>(null)
+  const pinned = useRef(true)
+  const lastTop = useRef(0)
+
+  function onLogScroll() {
+    const el = logRef.current
+    // A hidden panel (the console keeps inactive conversations at display:none)
+    // reports zero sizes and must not be mistaken for the reader scrolling up.
+    if (!el || el.clientHeight === 0) return
+    pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight <= STICK_TO_BOTTOM_PX
+    lastTop.current = el.scrollTop
+  }
+
+  // A panel that was hidden when messages arrived can't scroll then (it has no
+  // layout), and browsers may reset its position. When it becomes visible
+  // again, go to the newest message — or back to where the reader was.
+  useEffect(() => {
+    const el = logRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => {
+      if (el.clientHeight === 0) return
+      el.scrollTop = pinned.current ? el.scrollHeight : lastTop.current
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
   async function sendMessage() {
     const body = draft.trim()
     if (!body || sending) return
 
+    // Sending is an explicit "take me to the bottom", even from mid-history.
+    pinned.current = true
     setSending(true)
     setSendError(null)
     setPending({ body, seenIds: new Set(messages.map((m) => m.id)) })
@@ -101,6 +136,13 @@ export function ChatWindow({
       (m) => !pending.seenIds.has(m.id) && m.sender_type === role && m.body === pending.body,
     )
 
+  // Layout effect, not a plain one: scroll before paint so the newest message
+  // never flashes in below the fold and then jumps.
+  useLayoutEffect(() => {
+    const el = logRef.current
+    if (el && pinned.current) el.scrollTop = el.scrollHeight
+  }, [messages, showPending, messagesLoading])
+
   return (
     <div className="flex h-full flex-col">
       {connectionStatus === 'error' && (
@@ -115,6 +157,8 @@ export function ChatWindow({
           single live region instead, so they aren't read twice or one by one.
           tabIndex makes the scrollable transcript reachable by keyboard. */}
       <div
+        ref={logRef}
+        onScroll={onLogScroll}
         role="log"
         aria-live="off"
         aria-label={`Conversation with ${counterpart}`}
