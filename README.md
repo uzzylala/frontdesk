@@ -128,6 +128,42 @@ supabase/       schema, seed data, and webhook definitions
    when an agent goes online. Nothing in the browser does.
 3. Embed on any site with the snippet below, pointing at your domain.
 
+### Verifying that routing is webhook-driven
+
+In production the browser never calls `/api/route-conversation` or
+`/api/agent-online`; Postgres does, through the triggers in
+`supabase/webhooks.sql`. Three ways to check that yourself, from independent
+vantage points:
+
+1. **Browser side.** Open DevTools → Network, filter on `api/`, then use the
+   app (start a chat on `/`, click Online in `/agent`). The only `/api/` request
+   you'll ever see is `reap-disconnected` (the reaper sweep). There is no
+   `route-conversation` and no `agent-online`.
+2. **Server side.** Each routing invocation logs one line saying who called.
+   A browser's JSON POST always carries an `Origin` header; a Postgres webhook
+   sends none and identifies itself as `pg_net`:
+
+   ```
+   npx vercel logs --since 5m --json | grep '"fn"'
+   {"fn":"route-conversation","caller":"server","origin":null,"userAgent":"pg_net/0.20.4","payload":"webhook"}
+   ```
+
+   `caller: "browser"` would show the page's origin instead. Any such line
+   means something in a page is still triggering routing.
+3. **No browser at all.** `npm run verify:webhooks` (from `web/`) drives the
+   whole thing through the Supabase API: it inserts a conversation, then sets
+   an agent online with a queue waiting, and asserts the right agent got the
+   right conversation. Nothing but the database can have called the endpoints.
+   Run (1) or (2) alongside it.
+
+Measured on the deployed app: a conversation inserted straight into Postgres
+was assigned 0.7–2s later (~5s on a cold function); an agent going online was
+handed the oldest of three queued conversations in about 2s and the other two
+stayed queued. Server logs for those runs showed every routing call as
+`caller: "server"` with a `pg_net` user-agent, zero `browser`; a deliberately
+browser-like control request was labelled `caller: "browser"`, so the
+instrument does discriminate.
+
 ### Embedding
 
 ```html

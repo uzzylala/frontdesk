@@ -11,6 +11,7 @@
     "build:widget": "vite build --config vite.widget.config.ts",
     "widget:demo": "npm run build:widget && node scripts/serve-widget-demo.mjs",
     "lint": "oxlint",
+    "verify:webhooks": "node --env-file=.env.local scripts/verify-webhook-routing.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
