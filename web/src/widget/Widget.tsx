@@ -21,6 +21,7 @@ export function Widget({ apiBase, customerName, clientRouting }: WidgetProps) {
   const messages = useConversationStore((s) => s.messages)
   const messagesLoading = useConversationStore((s) => s.messagesLoading)
   const connectionStatus = useConversationStore((s) => s.connectionStatus)
+  const addMessage = useConversationStore((s) => s.addMessage)
   // Runs whether or not the panel is open: a visitor who closed it still needs
   // to hear that support replied.
   useSupportReplyAnnouncements(conversationId, messages, conversationId ? messagesLoading : false)
@@ -77,6 +78,7 @@ export function Widget({ apiBase, customerName, clientRouting }: WidgetProps) {
               counterpart="support"
               inputRef={inputRef}
               messages={messages}
+              onSent={addMessage}
               messagesLoading={conversationId ? messagesLoading : false}
               connectionStatus={conversationId ? connectionStatus : 'subscribed'}
               draft={draft}

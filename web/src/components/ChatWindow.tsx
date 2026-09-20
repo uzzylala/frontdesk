@@ -17,6 +17,12 @@ interface ChatWindowProps {
   /** Escape pressed in the message box (e.g. to return to the conversation list). */
   onEscape?: () => void
   messages: Message[]
+  /**
+   * Called with the saved row as soon as the insert returns, so the sender sees
+   * their message without waiting for the Realtime echo. Merged by id, so the
+   * echo arriving too is harmless.
+   */
+  onSent?: (message: Message) => void
   messagesLoading: boolean
   connectionStatus: ConnectionStatus
   draft: string
@@ -37,12 +43,16 @@ export function ChatWindow({
   inputRef,
   onEscape,
   messages,
+  onSent,
   messagesLoading,
   connectionStatus,
   draft,
   onDraftChange,
 }: ChatWindowProps) {
   const [sending, setSending] = useState(false)
+  // The message in flight, shown at once (dimmed) so the visitor never sees
+  // an empty transcript between pressing Send and the row coming back.
+  const [pending, setPending] = useState<{ body: string; seenIds: Set<string> } | null>(null)
   const [sendError, setSendError] = useState<string | null>(null)
   const inputId = useId()
 
@@ -52,22 +62,25 @@ export function ChatWindow({
 
     setSending(true)
     setSendError(null)
+    setPending({ body, seenIds: new Set(messages.map((m) => m.id)) })
     onDraftChange('')
 
     let error: unknown = null
     try {
       const id = conversationId ?? (await onEnsureConversation?.())
       if (!id) throw new Error('No conversation to send to')
-      const result = await supabase.from('messages').insert({
-        conversation_id: id,
-        sender_type: role,
-        body,
-      })
+      const result = await supabase
+        .from('messages')
+        .insert({ conversation_id: id, sender_type: role, body })
+        .select()
+        .single()
       error = result.error
+      if (result.data) onSent?.(result.data as Message)
     } catch (err) {
       error = err
     }
     setSending(false)
+    setPending(null)
 
     if (error) {
       console.error('Failed to send message', error)
@@ -79,6 +92,14 @@ export function ChatWindow({
       announce('Message sent')
     }
   }
+
+  // Hide the pending copy once its saved twin is in the list (the Realtime echo
+  // can beat the insert's own response), so it is never drawn twice.
+  const showPending =
+    pending !== null &&
+    !messages.some(
+      (m) => !pending.seenIds.has(m.id) && m.sender_type === role && m.body === pending.body,
+    )
 
   return (
     <div className="flex h-full flex-col">
@@ -103,31 +124,45 @@ export function ChatWindow({
       >
         {messagesLoading ? (
           <p role="status" className="text-sm text-slate-600">Loading conversation…</p>
-        ) : messages.length === 0 ? (
+        ) : messages.length === 0 && !showPending ? (
           <p className="text-sm text-slate-600">
             No messages yet — say hello.
           </p>
         ) : (
-          messages.map((message) => {
-            const mine = message.sender_type === role
-            return (
-              <div
-                key={message.id}
-                className={`flex ${message.sender_type === 'agent' ? 'justify-end' : 'justify-start'}`}
-              >
+          <>
+            {messages.map((message) => {
+              const mine = message.sender_type === role
+              return (
+                <div
+                  key={message.id}
+                  className={`flex ${message.sender_type === 'agent' ? 'justify-end' : 'justify-start'}`}
+                >
+                  <p
+                    className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm ${
+                      message.sender_type === 'agent'
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-slate-100 text-slate-900'
+                    }`}
+                  >
+                    <span className="sr-only">{mine ? 'You: ' : `${counterpart}: `}</span>
+                    {message.body}
+                  </p>
+                </div>
+              )
+            })}
+            {showPending && pending && (
+              <div className={`flex ${role === 'agent' ? 'justify-end' : 'justify-start'}`}>
                 <p
-                  className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm ${
-                    message.sender_type === 'agent'
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-slate-100 text-slate-900'
+                  className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm opacity-60 ${
+                    role === 'agent' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-900'
                   }`}
                 >
-                  <span className="sr-only">{mine ? 'You: ' : `${counterpart}: `}</span>
-                  {message.body}
+                  <span className="sr-only">You (sending): </span>
+                  {pending.body}
                 </p>
               </div>
-            )
-          })
+            )}
+          </>
         )}
       </div>
 

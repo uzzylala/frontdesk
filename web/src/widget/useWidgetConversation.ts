@@ -23,6 +23,7 @@ interface Options {
 export function useWidgetConversation({ apiBase, customerName, clientRouting }: Options) {
   const conversationId = useConversationStore((s) => s.conversationId)
   const setConversationId = useConversationStore((s) => s.setConversationId)
+  const startConversation = useConversationStore((s) => s.startConversation)
   const inFlight = useRef<Promise<string> | null>(null)
 
   useEffect(() => {
@@ -60,7 +61,7 @@ export function useWidgetConversation({ apiBase, customerName, clientRouting }: 
       if (error || !data) throw error ?? new Error('Failed to start conversation')
 
       localStorage.setItem(STORAGE_KEY, data.id)
-      setConversationId(data.id)
+      startConversation(data.id)
 
       // Dev-only stand-in for the Database Webhook that routes in production
       // (see lib/routingTrigger.ts). The host page opts in with
@@ -76,7 +77,7 @@ export function useWidgetConversation({ apiBase, customerName, clientRouting }: 
     })
 
     return inFlight.current
-  }, [conversationId, customerName, apiBase, clientRouting, setConversationId])
+  }, [conversationId, customerName, apiBase, clientRouting, startConversation])
 
   return { conversationId, ensureConversation }
 }

@@ -13,6 +13,7 @@ export function CustomerChatPage() {
   const messages = useConversationStore((s) => s.messages)
   const messagesLoading = useConversationStore((s) => s.messagesLoading)
   const connectionStatus = useConversationStore((s) => s.connectionStatus)
+  const addMessage = useConversationStore((s) => s.addMessage)
   useConversationChannel(conversationId)
   useSupportReplyAnnouncements(conversationId, messages, messagesLoading)
   useDocumentTitle('Chat with us — Frontdesk')
@@ -45,6 +46,7 @@ export function CustomerChatPage() {
             role="customer"
             counterpart="support"
             messages={messages}
+            onSent={addMessage}
             messagesLoading={messagesLoading}
             connectionStatus={connectionStatus}
             draft={draft}

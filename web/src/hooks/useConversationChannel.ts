@@ -26,7 +26,12 @@ export function useConversationChannel(conversationId: string | null) {
     if (!conversationId) return
 
     let cancelled = false
-    setMessagesLoading(true)
+    // A conversation we created ourselves a moment ago has nothing to load;
+    // showing "Loading…" for it is a flash, and a spoken one. The history
+    // fetch after SUBSCRIBED still runs, for anything that arrives meanwhile.
+    if (useConversationStore.getState().freshConversationId !== conversationId) {
+      setMessagesLoading(true)
+    }
     setConnectionStatus('connecting')
 
     async function loadHistory() {
