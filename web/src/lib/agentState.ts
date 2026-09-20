@@ -16,3 +16,12 @@ export function effectiveAgentState(agent: Agent, connected: boolean): Effective
   if (connected) return agent.status
   return agent.status === 'away' ? 'offline' : 'disconnected'
 }
+
+/** Shared by the roster chips and the spoken presence announcements. */
+export const AGENT_STATE_LABEL: Record<EffectiveAgentState, string> = {
+  online: 'Online',
+  busy: 'Busy',
+  away: 'Away',
+  offline: 'Offline',
+  disconnected: 'Disconnected',
+}

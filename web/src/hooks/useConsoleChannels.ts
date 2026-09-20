@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { RealtimeChannel } from '@supabase/supabase-js'
+import { emitConsoleEvent } from '../lib/consoleEvents'
 import { supabase } from '../lib/supabase'
 import { useConsoleStore } from '../store/consoleStore'
 import type { Message } from '../types'
@@ -57,7 +58,22 @@ export function useConsoleChannels(conversationIds: string[]) {
             filter: `conversation_id=eq.${id}`,
           },
           (payload) => {
-            useConsoleStore.getState().receiveMessage(id, payload.new as Message)
+            const message = payload.new as Message
+            const store = useConsoleStore.getState()
+            const entry = store.conversations[id]
+            // Only a genuinely new message from the customer is worth
+            // saying aloud: not our own reply, and not one that the history
+            // fetch already delivered.
+            const isNewFromCustomer =
+              !!entry &&
+              message.sender_type === 'customer' &&
+              !entry.messages.some((m) => m.id === message.id)
+
+            store.receiveMessage(id, message)
+
+            if (isNewFromCustomer) {
+              emitConsoleEvent({ type: 'message', conversationId: id, customerName: entry.customerName })
+            }
           },
         )
         .subscribe((status) => {

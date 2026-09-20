@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { consumeSelfClaim, emitConsoleEvent } from '../lib/consoleEvents'
 import { supabase } from '../lib/supabase'
 import { useConsoleStore } from '../store/consoleStore'
 import type { Conversation } from '../types'
@@ -110,12 +111,21 @@ export function useAgentRoster(agentId: string | null): Result {
       }
 
       if (row.assigned_agent_id === agentId) {
+        const isNew = !store.order.includes(row.id)
         store.addAssignedConversation({
           id: row.id,
           customerName: row.customer_name,
           previousAgentId: row.previous_agent_id,
         })
         setQueue((prev) => prev.filter((q) => q.id !== row.id))
+        if (isNew && !consumeSelfClaim(row.id)) {
+          emitConsoleEvent({
+            type: 'assigned',
+            conversationId: row.id,
+            customerName: row.customer_name,
+            previousAgentId: row.previous_agent_id,
+          })
+        }
       } else if (!row.assigned_agent_id) {
         // Unassigned: it's in the queue — and if it was ours a moment ago
         // (reassigned away after a disconnect), it's no longer.
