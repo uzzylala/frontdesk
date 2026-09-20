@@ -72,6 +72,16 @@ export async function until(fn, timeoutMs, intervalMs = 200) {
 // ---------------------------------------------------------------------------------------------------------------
 // data: seed, test rows, cleanup
 
+/**
+ * "Which conversations named `name` appeared after this point?" Answered by id, not by time: the database stamps
+ * created_at with ITS clock, which runs ~0.5s ahead of this machine's, so a `created_at >= now` window can swallow a
+ * row created just before it (that made a test count 2 where there was 1). Returns rows from the database each call.
+ */
+export async function watchNewConversations(name = 'Customer') {
+  const known = new Set(((await admin.from('conversations').select('id').eq('customer_name', name)).data ?? []).map((c) => c.id))
+  return async () => ((await admin.from('conversations').select('id,created_at').eq('customer_name', name)).data ?? []).filter((c) => !known.has(c.id))
+}
+
 /** The demo data the app ships with (supabase/seed.sql). Tests must leave it as they found it. */
 export const SEEDED = ['Amara O.', 'Deji K.', 'Priya S.', 'Tom W.', 'Grace L.']
 /** Every conversation a suite creates is named with this prefix so cleanup can never touch anything else. */
@@ -118,7 +128,7 @@ export async function assertSafeToRun() {
 
 /**
  * Puts the database back the way the suites found it: deletes the listed ids and anything with the test prefix,
- * deletes what the customer page / widget created during this run, resets every agent to away with no heartbeat
+ * deletes (and reports) what the customer page / widget created during this run without a suite tracking it, resets every agent to away with no heartbeat
  * (a stale one would make the reaper move things), and restores the seeded conversations to their baseline
  * assignment (a reaper sweep during a destructive test otherwise leaves them reassigned).
  */
@@ -126,7 +136,20 @@ export async function cleanup(ids = []) {
   await assertSafeToRun()
   if (ids.length) await admin.from('conversations').delete().in('id', ids)
   await admin.from('conversations').delete().like('customer_name', `${TEST_PREFIX}%`)
-  await admin.from('conversations').delete().in('customer_name', APP_CREATED).gte('created_at', new Date(RUN_START - 60_000).toISOString())
+  // A safety net for rows the page/widget made that a suite did not track by id (a suite that types a first message
+  // creates one and may not record its id). Loading a page must NOT create any: a conversation with no message at all
+  // is a "ghost", which is a regression, so report those loudly and separately.
+  const since = new Date(RUN_START - 60_000).toISOString()
+  const { data: appRows } = await admin.from('conversations').select('id').in('customer_name', APP_CREATED).gte('created_at', since)
+  if (appRows?.length) {
+    const swept = appRows.map((c) => c.id)
+    const { data: withMsg } = await admin.from('messages').select('conversation_id').in('conversation_id', swept)
+    const has = new Set((withMsg ?? []).map((m) => m.conversation_id))
+    const ghosts = swept.filter((id) => !has.has(id))
+    await admin.from('conversations').delete().in('id', swept)
+    if (ghosts.length) console.warn(`  !! cleanup swept ${ghosts.length} GHOST conversation(s) with no message at all (a page created one before anything was sent): ${ghosts.map((g) => g.slice(0, 8)).join(', ')}`)
+    else console.log(`  (cleanup swept ${swept.length} untracked conversation(s) a suite created by sending a message; 0 ghosts)`)
+  }
   await admin.from('agents').update({ status: 'away', last_assigned_at: null }).neq('id', NONE)
   await admin.from('agent_heartbeats').delete().neq('agent_id', NONE)
   const { data: ag } = await admin.from('agents').select('id,name')

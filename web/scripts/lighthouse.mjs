@@ -7,8 +7,10 @@
 // reports (HTML + JSON) go to lighthouse-reports/ (git-ignored). Uses Playwright's Chromium, so nothing depends on
 // which Chrome the machine happens to have.
 //
-// Loading the customer page (/) creates a conversation by design (the standalone page makes one on load), so this
-// removes what it created afterwards. The widget host page does not: the widget only creates one on a first message.
+// Loading a page must not leave anything behind: neither the customer page nor the widget creates a conversation
+// until its visitor sends a message. So there is no cleanup here; instead, afterwards, this CHECKS that no conversation
+// appeared during the run, and fails if one did (a ghost conversation reintroduced by a regression). The check is
+// read-only and uses the anon key, so it sees exactly what any visitor could see.
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -69,22 +71,29 @@ try {
     }
   }
 } finally {
-  // chrome-launcher can fail to delete its temp profile on Windows (EPERM). That must not skip the cleanup below.
+  // chrome-launcher can fail to delete its temp profile on Windows (EPERM). That must not skip the check below.
   try {
     await chrome.kill()
   } catch (err) {
     console.warn('(chrome temp profile not removed:', err.code ?? err.message, ')')
   }
-  // Remove the conversation(s) the customer page created while being audited.
+  // Nothing may have been created by merely loading the pages. Deliberately not deleted if found: it is a failure.
   const url = process.env.VITE_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const key = process.env.VITE_SUPABASE_ANON_KEY
   if (!url || !key) {
-    console.error('\n!! could not clean up: no Supabase credentials in the environment (run via `npm run lighthouse`). The customer page creates a conversation on load, so conversations named "Customer" may have been left behind.')
-    process.exitCode = 1
+    console.warn('\n(ghost-conversation check NOT run: no Supabase credentials in the environment; run via `npm run lighthouse`)')
   } else {
-    const admin = createClient(url, key, { auth: { persistSession: false } })
-    const { data } = await admin.from('conversations').delete().eq('customer_name', 'Customer').gte('created_at', new Date(started - 5_000).toISOString()).select('id')
-    console.log(`\ncleaned up ${data?.length ?? 0} conversation(s) created by loading the customer page`)
+    const reader = createClient(url, key, { auth: { persistSession: false } })
+    const { data, error } = await reader.from('conversations').select('id,customer_name').gte('created_at', new Date(started - 5_000).toISOString())
+    if (error) {
+      console.error('\n!! ghost-conversation check could not read the database:', error.message)
+      process.exitCode = 1
+    } else if (data.length) {
+      console.error(`\n!! FAIL: ${data.length} conversation(s) appeared while only loading pages (a page is creating one before any message is sent): ${data.map((c) => c.id).join(', ')}`)
+      process.exitCode = 1
+    } else {
+      console.log('\nno conversation was created by loading the pages (ghost-conversation check passed)')
+    }
   }
 }
 
