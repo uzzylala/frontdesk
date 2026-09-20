@@ -1,4 +1,4 @@
-import { handleCors, logCaller, targetId, type Req, type Res } from '../server/http.js'
+import { handleCors, logCaller, targetId, triggerKind, type Req, type Res } from '../server/http.js'
 import { assignNewConversation } from '../server/routing.js'
 import { createAdminClient } from '../server/supabaseAdmin.js'
 
@@ -28,7 +28,7 @@ export default async function handler(req: Req, res: Res) {
 
   try {
     const admin = createAdminClient()
-    const result = await assignNewConversation(admin, conversationId)
+    const result = await assignNewConversation(admin, conversationId, { via: triggerKind(req) })
     res.status(200).json(result)
   } catch (err) {
     console.error('route-conversation failed', err)

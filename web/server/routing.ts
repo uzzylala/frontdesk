@@ -4,6 +4,54 @@ import type { Agent } from '../src/types.js'
 
 type AdminClient = SupabaseClient
 
+/**
+ * How the conversation's current assignee got it, so the fallback paths are
+ * observable rather than silent (see supabase/assigned-via.sql). Manual pickups
+ * happen in the browser and are left null.
+ */
+export type AssignedVia =
+  | 'webhook' // route-conversation, called by the database
+  | 'client_trigger' // the same endpoint, called by a browser (local dev only)
+  | 'queue_pull' // an agent coming online was handed the oldest queued one
+  | 'recovery_sweep' // the 15s fallback for a routing trigger that never arrived
+  | 'reassignment' // moved off a disconnected agent by the reaper
+
+let warnedMissingColumn = false
+
+/**
+ * Records a routing decision two ways: always as one structured log line, and
+ * — best effort — in conversations.assigned_via. The column write is a
+ * separate statement and can never fail routing: until the migration has been
+ * applied it just warns (once), and the log line still carries the event.
+ * `via: null` clears the tag (the conversation went back to the queue).
+ */
+async function recordRouting(
+  admin: AdminClient,
+  event: { via: AssignedVia | null; conversationId: string; agentId: string | null },
+): Promise<void> {
+  console.log(JSON.stringify({ event: 'routing', ...event }))
+  try {
+    const update = admin
+      .from('conversations')
+      .update({ assigned_via: event.via })
+      .eq('id', event.conversationId)
+    const { error } = await (event.agentId
+      ? update.eq('assigned_agent_id', event.agentId)
+      : update.is('assigned_agent_id', null))
+    if (!error) return
+    const missing = error.code === 'PGRST204' || /assigned_via/.test(error.message ?? '')
+    if (missing && warnedMissingColumn) return
+    warnedMissingColumn ||= missing
+    console.warn(
+      missing
+        ? 'conversations.assigned_via does not exist yet: run supabase/assigned-via.sql (routing is unaffected)'
+        : `could not record assigned_via: ${error.message}`,
+    )
+  } catch (err) {
+    console.warn('could not record assigned_via', err)
+  }
+}
+
 type SortKey = [openCount: number, lastAssignedAtMs: number, agentId: string]
 
 function sortKeyFor(agent: Agent, openCount: number): SortKey {
@@ -117,7 +165,7 @@ export type AssignResult =
 export async function assignNewConversation(
   admin: AdminClient,
   conversationId: string,
-  options: { idleOnly?: boolean } = {},
+  options: { idleOnly?: boolean; via?: AssignedVia } = {},
 ): Promise<AssignResult> {
   const agent = await pickLeastBusyOnlineAgent(admin, options)
   if (!agent) return { status: 'queued' }
@@ -138,6 +186,7 @@ export async function assignNewConversation(
     .eq('id', agent.id)
   if (agentError) throw agentError
 
+  await recordRouting(admin, { via: options.via ?? 'webhook', conversationId, agentId: agent.id })
   return { status: 'assigned', agentId: agent.id }
 }
 
@@ -199,6 +248,7 @@ export async function pullQueueForAgent(
     .eq('id', agentId)
   if (lastAssignedError) throw lastAssignedError
 
+  await recordRouting(admin, { via: 'queue_pull', conversationId: queued.id, agentId })
   return { status: 'assigned', conversationId: queued.id }
 }
 
@@ -239,7 +289,10 @@ export async function routeStrandedQueue(admin: AdminClient): Promise<number> {
 
   let routed = 0
   for (const conversation of stranded ?? []) {
-    const result = await assignNewConversation(admin, conversation.id, { idleOnly: true })
+    const result = await assignNewConversation(admin, conversation.id, {
+      idleOnly: true,
+      via: 'recovery_sweep',
+    })
     if (result.status === 'queued') break
     if (result.status !== 'assigned') continue
 
@@ -261,6 +314,7 @@ export async function routeStrandedQueue(admin: AdminClient): Promise<number> {
         .eq('id', conversation.id)
         .eq('assigned_agent_id', result.agentId)
       if (undoError) throw undoError
+      await recordRouting(admin, { via: null, conversationId: conversation.id, agentId: null })
       break
     }
     routed++
@@ -329,8 +383,11 @@ async function reassignFrom(admin: AdminClient, agentId: string): Promise<ReapRe
         .update({ last_assigned_at: new Date().toISOString() })
         .eq('id', target.id)
       if (bumpError) throw bumpError
+      await recordRouting(admin, { via: 'reassignment', conversationId: conversation.id, agentId: target.id })
     } else {
       movedToQueue++
+      // Back in the queue: the previous tag no longer describes anything.
+      await recordRouting(admin, { via: null, conversationId: conversation.id, agentId: null })
     }
   }
 

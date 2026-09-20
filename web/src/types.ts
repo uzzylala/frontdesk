@@ -8,6 +8,8 @@ export interface Conversation {
   assigned_agent_id: string | null
   previous_agent_id: string | null
   reassigned_at: string | null
+  /** How the current assignee got it; null for manual pickups and the queue. */
+  assigned_via?: string | null
   created_at: string
 }
 

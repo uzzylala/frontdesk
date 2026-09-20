@@ -1,0 +1,53 @@
+-- Observability for the routing fallbacks: how did a conversation's current
+-- assignee get it?
+--
+-- Run this once in the Supabase SQL editor. It is idempotent, and the app works
+-- with or without it: until it exists, the routing functions log a one-time
+-- warning and carry on (the structured `{"event":"routing", ...}` log lines are
+-- emitted either way). See web/server/routing.ts (recordRouting).
+--
+--   webhook          route-conversation, called by the database (pg_net)
+--   client_trigger   the same endpoint, called by a browser (local dev only)
+--   queue_pull       an agent coming online was handed the oldest queued one
+--   recovery_sweep   the 15s fallback for a routing trigger that never arrived
+--   reassignment     moved off a disconnected agent by the reaper
+--   NULL             a manual pickup (that write happens in the browser), or
+--                    currently queued
+--
+-- The tag is the MOST RECENT server-side assignment, not a history: a
+-- reassignment overwrites it. That is why the question below is restricted to
+-- conversations that were never reassigned (previous_agent_id is null), for
+-- which the tag is exactly how the conversation was first routed.
+
+alter table conversations
+  add column if not exists assigned_via text
+  check (assigned_via in ('webhook', 'client_trigger', 'queue_pull', 'recovery_sweep', 'reassignment'));
+
+-- ---------------------------------------------------------------------------
+-- "How often is the routing webhook actually failing?"
+--
+-- Among conversations that were never reassigned, how many were routed by the
+-- webhook vs. rescued by the recovery sweep? A rescue means the webhook call for
+-- that conversation never (or too late) landed.
+--
+--   select
+--     count(*) filter (where assigned_via = 'webhook')        as by_webhook,
+--     count(*) filter (where assigned_via = 'recovery_sweep') as rescued_by_sweep,
+--     round(100.0 * count(*) filter (where assigned_via = 'recovery_sweep')
+--       / nullif(count(*) filter (where assigned_via in ('webhook', 'recovery_sweep')), 0), 1)
+--                                                              as pct_webhook_missed
+--   from conversations
+--   where previous_agent_id is null
+--     and created_at > now() - interval '30 days';
+--
+-- Reading it honestly:
+--   * It UNDER-counts failures: a conversation whose webhook was lost but that an
+--     agent picked up by hand before the sweep (or that no agent was idle for)
+--     is tagged NULL and appears in neither column.
+--   * Rows from before this migration are NULL and are ignored.
+--   * A conversation queued because nobody was online and later handed out by an
+--     agent coming online is 'queue_pull' - the webhook did its job (it found no
+--     one), so it correctly counts as neither.
+--   * Event history (including reassignments) is in the function logs
+--     ({"event":"routing"}), but Vercel's free plan keeps those only briefly;
+--     this column is the durable record.

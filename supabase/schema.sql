@@ -163,3 +163,9 @@ grant execute on function agent_heartbeat(uuid) to anon;
 -- after a conversation is re-picked-up, so the UI can show it was transferred.
 alter table conversations add column if not exists previous_agent_id uuid references agents (id);
 alter table conversations add column if not exists reassigned_at timestamptz;
+
+-- How the current assignee got the conversation (routing observability; see
+-- assigned-via.sql, which is the same statement plus the queries that use it).
+alter table conversations
+  add column if not exists assigned_via text
+  check (assigned_via in ('webhook', 'client_trigger', 'queue_pull', 'recovery_sweep', 'reassignment'));

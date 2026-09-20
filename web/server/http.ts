@@ -28,6 +28,16 @@ export function targetId(body: unknown, directKey: string, table: string): strin
 }
 
 /**
+ * Whether a routing call came from the database (a webhook payload) or from a
+ * browser calling the endpoint directly (local dev, VITE_ROUTING_TRIGGER=client).
+ * Recorded as assigned_via so dev traffic can't inflate the webhook count.
+ */
+export function triggerKind(req: Req): 'webhook' | 'client_trigger' {
+  const body = (req.body ?? {}) as { table?: unknown }
+  return typeof body.table === 'string' ? 'webhook' : 'client_trigger'
+}
+
+/**
  * The embeddable widget calls these endpoints from whatever third-party page
  * hosts it, so they must answer cross-origin requests. `*` is acceptable here
  * because the endpoints carry no cookies or credentials and are idempotent:
