@@ -83,7 +83,17 @@ supabase/       schema, seed data, and webhook definitions
   `!important` beats outer). It opens its own Realtime subscription, talks
   to the same tables, and creates its conversation lazily on the first
   message so it never leaves ghost conversations from visitors who just
-  loaded the page.
+  loaded the page. The standalone customer page works the same way (both use
+  one hook, `useLazyConversation`): it originally created a conversation on
+  load, so every visit, including bots and people who never typed, left an
+  empty conversation in the queue and had it routed to an agent. Now loading
+  creates nothing, and a returning visitor's remembered conversation is only
+  *looked up*, where a failed lookup is an error with "Try again" rather than
+  being read as "none" (which would have started a second conversation and
+  orphaned the first). The trade-off: the first message is now two round trips
+  (create the conversation, then insert the message), so if the second fails the
+  conversation exists with no message. The visitor's draft is kept and a retry
+  reuses that conversation instead of creating another.
 
 - **Accessibility:** built for keyboard and screen-reader use, and checked with
   a real screen reader (see "How it was verified").
@@ -382,8 +392,12 @@ none of the failing nodes is inside the widget, which adds 0 failures (also
 confirmed by axe). Three real findings were fixed: the app had no meta description
 or `robots.txt` (SEO 82 → 100 on the customer page); the local demo server served
 the 448 KB widget uncompressed, which made the host page's mobile performance look
-like 81 instead of 98 (production serves it as ~130 KB gzip); and my own script
-skipped its cleanup when Chrome's temp-profile deletion failed on Windows. The
+like 81 instead of 98 (production serves it as ~130 KB gzip); and the customer
+page created a conversation on every load, which the script had to delete
+afterwards, and which was skipped when Chrome's temp-profile deletion failed on
+Windows. That was the app's bug, not the script's: the page now creates nothing until
+a message is sent, the script's cleanup is gone, and it instead fails if any
+conversation appears while only loading pages. The
 remaining cost is `unused-javascript` (React + supabase-js), which I haven't tried
 to reduce. Performance scores vary a lot from run to run (the customer page's mobile score was
 88, 98 and 89 across three runs; its desktop score 100 locally and 86 deployed, on

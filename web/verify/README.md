@@ -42,7 +42,9 @@ Guard rails, in `lib.mjs`:
   (`supabase/seed.sql`) nor test data, so a real customer's conversation can't be touched. `VERIFY_FORCE=1` overrides.
 - **Test data is named.** Everything a suite creates is called `A11y …`; cleanup deletes by that prefix, so it can never
   match anything else. Rows made by the customer page or the widget during a run are removed by name **and** by
-  creation time (this run only).
+  creation time (this run only). That sweep is a safety net for a suite that types a first message and doesn't record
+  the id. Merely loading a page creates nothing, so the sweep reports any swept conversation that has **no message at
+  all** as a ghost (a regression), separately from the ordinary ones.
 - **Cleanup restores the seed** (each seeded conversation back to the "Agent" agent) and resets every agent to away,
   because a reaper sweep during a destructive test otherwise leaves the demo data reassigned.
 - Credentials come from `web/.env.local` (the service-role key, to seed and clean up). They are never written into a
