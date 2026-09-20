@@ -59,8 +59,15 @@ test('customer chats, the agent replies, the agent drops, the other agent takes 
     await customer.getByPlaceholder('Type a message…').fill(customerMessage)
     await customer.keyboard.press('Enter')
     await expect(customer.getByRole('log').getByText(customerMessage)).toBeVisible()
+    // The page creates nothing on load: the conversation is created by this first message. The message text is drawn
+    // (as "Sending…") before that insert returns, so wait for the conversation to be remembered rather than assume it.
+    await expect
+      .poll(() => customer.evaluate(() => Object.values(localStorage).find((v) => /^[0-9a-f-]{36}$/.test(v))), {
+        message: 'the customer page remembers the conversation its first message created',
+      })
+      .toBeTruthy()
+    await expect(customer.getByText('Sending…')).toHaveCount(0)
     const conversationId = await customer.evaluate(() => Object.values(localStorage).find((v) => /^[0-9a-f-]{36}$/.test(v)))
-    expect(conversationId, 'the customer page remembers its conversation').toBeTruthy()
     ids.push(conversationId as string)
 
     // --- it is routed to exactly one of the two online agents ------------------------------------------------------

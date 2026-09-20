@@ -1,7 +1,7 @@
 // Error-recovery audit: inject a REAL failure for each async operation and check what the user experiences.
 // For each: is the failure visible and accessible, is anything wrongly lost or mislabelled, and can the user recover?
 import { chromium } from 'playwright'
-import { admin, agents, makeConv, cleanup, HOST, APP, SAMPLER, openChaosConsole, heard, sidebarIds, check, summary, sleep, until } from '../lib.mjs'
+import { admin, agents, watchNewConversations, makeConv, cleanup, HOST, APP, SAMPLER, openChaosConsole, heard, sidebarIds, check, summary, sleep, until } from '../lib.mjs'
 
 const ids = []
 const want = (n) => !process.env.ONLY || process.env.ONLY.split(',').includes(String(n))
@@ -195,17 +195,75 @@ async function main() {
     const f = { on: true }
     const ctx = await browser.newContext({ viewport: { width: 700, height: 800 } })
     const page = await ctx.newPage()
+    const created = await watchNewConversations()
+    const count = async () => (await created()).length
     await page.route('**/rest/v1/conversations*', fail(f, 'POST'))
     await page.goto(`${APP}/`, { waitUntil: 'load' })
-    await settle(async () => (await page.locator('[role="alert"]').count()) > 0, 20000)
-    check('customer page cannot start → announced (role="alert")', await page.locator('[role="alert"]').count() > 0)
-    const btn = page.getByRole('button', { name: /try again|retry/i })
-    check('  …and offers "Try again"', (await btn.count()) > 0)
+    const box = page.locator('input[placeholder="Type a message…"]')
+    check('the page itself loads fine when conversations cannot be created (it creates none on load)', (await box.count()) > 0 && (await page.locator('[role="alert"]').count()) === 0)
+    await box.fill('first message, start will fail')
+    await page.keyboard.press('Enter')
+    await settle(async () => (await page.locator('[role="alert"]:has-text("failed to send")').count()) > 0, 10000)
+    check('the first message cannot start a conversation → announced (role="alert")', (await page.locator('[role="alert"]:has-text("failed to send")').count()) > 0)
+    check('  …the draft is back in the box, not lost', (await box.inputValue()) === 'first message, start will fail')
+    check('  …and nothing was created', (await count()) === 0, await count())
     f.on = false
-    if ((await btn.count()) > 0) { await btn.first().click() }
-    check('  …which recovers without a page reload', (await settle(async () => (await page.locator('input[placeholder="Type a message…"]').count()) > 0, 15000)).ok)
+    await page.keyboard.press('Enter')
+    check('  …retrying without a reload starts the conversation and sends', (await settle(async () => (await page.locator('[role="log"]').innerText()).includes('first message, start will fail'), 10000)).ok)
+    // The pending bubble puts the text in the log before the insert has returned, so wait for the row itself.
+    const one = await settle(async () => (await count()) === 1, 10000)
     const cid = await page.evaluate(() => Object.values(localStorage).find((v) => /^[0-9a-f-]{36}$/.test(v)))
     if (cid) ids.push(cid)
+    check('  …as exactly one conversation', one.ok, await count())
+    await ctx.close()
+  }
+  if (want(5)) {
+    // The other half of the two-step first message: the conversation is created, then the MESSAGE insert fails.
+    // The conversation now exists with nothing in it; the retry must reuse it, not create a second.
+    const f = { on: true }
+    const created = await watchNewConversations()
+    const describe = async (rows) => JSON.stringify({ rows: await Promise.all(rows.map(async (r) => ({ id: r.id.slice(0, 8), created_at: r.created_at, messages: (await admin.from('messages').select('id', { count: 'exact', head: true }).eq('conversation_id', r.id)).count }))) })
+    const ctx = await browser.newContext({ viewport: { width: 700, height: 800 } })
+    const page = await ctx.newPage()
+    await page.route('**/rest/v1/messages*', fail(f, 'POST'))
+    await page.goto(`${APP}/`, { waitUntil: 'load' })
+    const box = page.locator('input[placeholder="Type a message…"]')
+    await box.fill('second step will fail')
+    await page.keyboard.press('Enter')
+    await settle(async () => (await page.locator('[role="alert"]:has-text("failed to send")').count()) > 0, 10000)
+    check('conversation created but the message insert fails → announced (role="alert")', (await page.locator('[role="alert"]:has-text("failed to send")').count()) > 0)
+    check('  …the draft is kept', (await box.inputValue()) === 'second step will fail')
+    const first = await created()
+    for (const c of first) ids.push(c.id)
+    check('  …and the (empty) conversation exists exactly once, remembered by the page', first.length === 1 && (await page.evaluate(() => localStorage.getItem('frontdesk:customer-conversation-id'))) === first[0]?.id, await describe(first))
+    f.on = false
+    await page.keyboard.press('Enter')
+    check('  …retry sends the message', (await settle(async () => (await admin.from('messages').select('id').eq('conversation_id', first[0]?.id).eq('body', 'second step will fail')).data?.length === 1, 10000)).ok)
+    const after = await created()
+    for (const c of after) ids.push(c.id)
+    check('  …into the SAME conversation, without creating a second', after.length === 1, await describe(after))
+    await ctx.close()
+  }
+  if (want(5)) {
+    // A returning visitor whose remembered conversation cannot be looked up: "couldn't ask" must not read as "none",
+    // or the next message would start a second conversation and orphan the first.
+    const R = await makeConv({ customer_name: 'A11y Returning' }, [{ body: 'my earlier message' }])
+    ids.push(R)
+    const f = { on: true }
+    const ctx = await browser.newContext({ viewport: { width: 700, height: 800 } })
+    await ctx.addInitScript((cid) => localStorage.setItem('frontdesk:customer-conversation-id', cid), R)
+    const page = await ctx.newPage()
+    await page.route('**/rest/v1/conversations*', fail(f, 'GET'))
+    await page.goto(`${APP}/`, { waitUntil: 'load' })
+    await settle(async () => (await page.locator('[role="alert"]:has-text("reach your conversation")').count()) > 0, 25000)
+    check('remembered conversation cannot be looked up → announced (role="alert")', (await page.locator('[role="alert"]:has-text("reach your conversation")').count()) > 0)
+    check('  …no composer is offered, so nothing can start a second conversation', (await page.locator('input[placeholder="Type a message…"]').count()) === 0)
+    check('  …and the saved id is kept', (await page.evaluate(() => localStorage.getItem('frontdesk:customer-conversation-id'))) === R)
+    const btn = page.getByRole('button', { name: /try again|retry/i })
+    check('  …with "Try again"', (await btn.count()) > 0)
+    f.on = false
+    if ((await btn.count()) > 0) await btn.first().click()
+    check('  …which recovers the same conversation, history included', (await settle(async () => (await page.locator('[role="log"]').innerText()).includes('my earlier message'), 15000)).ok)
     await ctx.close()
   }
 

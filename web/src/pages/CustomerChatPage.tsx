@@ -2,21 +2,27 @@ import { useState } from 'react'
 import { ChatWindow } from '../components/ChatWindow'
 import { LiveRegion } from '../components/LiveRegion'
 import { useConversationChannel } from '../hooks/useConversationChannel'
-import { useCustomerConversation } from '../hooks/useCustomerConversation'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { useLazyConversation } from '../hooks/useLazyConversation'
 import { useSupportReplyAnnouncements } from '../hooks/useSupportReplyAnnouncements'
+import { CLIENT_TRIGGERS_ROUTING } from '../lib/routingTrigger'
 import { useConversationStore } from '../store/conversationStore'
 
+const STORAGE_KEY = 'frontdesk:customer-conversation-id'
+
 export function CustomerChatPage() {
-  const { loading, error, retry } = useCustomerConversation()
-  const conversationId = useConversationStore((s) => s.conversationId)
+  // Nothing is created here on load: the conversation is created by the first message (see useLazyConversation).
+  const { conversationId, ensureConversation, lookup, retryLookup } = useLazyConversation({
+    storageKey: STORAGE_KEY,
+    clientRouting: CLIENT_TRIGGERS_ROUTING,
+  })
   const messages = useConversationStore((s) => s.messages)
   const messagesLoading = useConversationStore((s) => s.messagesLoading)
   const connectionStatus = useConversationStore((s) => s.connectionStatus)
   const addMessage = useConversationStore((s) => s.addMessage)
   const { retryHistory } = useConversationChannel(conversationId)
   const historyError = useConversationStore((s) => s.historyError)
-  useSupportReplyAnnouncements(conversationId, messages, messagesLoading)
+  useSupportReplyAnnouncements(conversationId, messages, conversationId ? messagesLoading : false)
   useDocumentTitle('Chat with us — Frontdesk')
   const [draft, setDraft] = useState('')
 
@@ -35,34 +41,35 @@ export function CustomerChatPage() {
       </header>
 
       <main className="min-h-0 flex-1">
-        {loading ? (
+        {lookup === 'resolving' ? (
           <p role="status" className="p-4 text-sm text-slate-600">Connecting…</p>
-        ) : error ? (
+        ) : lookup === 'failed' ? (
           <div role="alert" className="p-4 text-sm text-red-700">
-            <p>Couldn't start a conversation: {error}</p>
+            <p>Couldn't reach your conversation.</p>
             <button
               type="button"
-              onClick={retry}
+              onClick={retryLookup}
               className="mt-2 rounded-md bg-indigo-700 px-3 py-1 text-xs font-medium text-white"
             >
               Try again
             </button>
           </div>
-        ) : conversationId ? (
+        ) : (
           <ChatWindow
             conversationId={conversationId}
+            onEnsureConversation={ensureConversation}
             role="customer"
             counterpart="support"
             messages={messages}
             onSent={addMessage}
-            messagesLoading={messagesLoading}
-            historyError={historyError}
+            messagesLoading={conversationId ? messagesLoading : false}
+            historyError={conversationId ? historyError : false}
             onRetryHistory={retryHistory}
-            connectionStatus={connectionStatus}
+            connectionStatus={conversationId ? connectionStatus : 'subscribed'}
             draft={draft}
             onDraftChange={setDraft}
           />
-        ) : null}
+        )}
       </main>
       <LiveRegion />
     </div>

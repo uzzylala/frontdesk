@@ -2,9 +2,12 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { ChatWindow } from '../components/ChatWindow'
 import { LiveRegion } from '../components/LiveRegion'
 import { useConversationChannel } from '../hooks/useConversationChannel'
+import { useLazyConversation } from '../hooks/useLazyConversation'
 import { useSupportReplyAnnouncements } from '../hooks/useSupportReplyAnnouncements'
 import { useConversationStore } from '../store/conversationStore'
-import { useWidgetConversation } from './useWidgetConversation'
+
+// Stored in the host page's localStorage: the key is part of what embedders' visitors already have.
+const WIDGET_STORAGE_KEY = 'frontdesk:widget:conversation-id'
 
 interface WidgetProps {
   apiBase: string
@@ -15,7 +18,12 @@ interface WidgetProps {
 export function Widget({ apiBase, customerName, clientRouting }: WidgetProps) {
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState('')
-  const { conversationId, ensureConversation } = useWidgetConversation({ apiBase, customerName, clientRouting })
+  const { conversationId, ensureConversation } = useLazyConversation({
+    storageKey: WIDGET_STORAGE_KEY,
+    apiBase,
+    customerName,
+    clientRouting,
+  })
   const { retryHistory } = useConversationChannel(conversationId)
   const historyError = useConversationStore((s) => s.historyError)
 

@@ -1,6 +1,6 @@
 // Loading-state audit: hold each operation's response for ~2.5s; the wait must be visible, and clear afterwards.
 import { chromium } from 'playwright'
-import { agents, makeConv, cleanup, HOST, APP, sidebarIds, check, summary, sleep, until } from '../lib.mjs'
+import { agents, watchNewConversations, makeConv, cleanup, HOST, APP, sidebarIds, check, summary, sleep, until } from '../lib.mjs'
 
 const ids = []
 const DELAY = 2500
@@ -86,15 +86,42 @@ async function main() {
     await ctx.close()
   }
 
-  console.log('\n[6] Customer page: starting a conversation')
+  console.log('\n[6] Customer page: no conversation on load; one is started by the first message')
   {
+    const created = await watchNewConversations()
+    const count = async () => (await created()).length
     const f = { on: true }
     const { ctx, page } = await newPage(browser, [['**/rest/v1/conversations*', slow(f, 'POST')]], { width: 700, height: 800 })
-    await page.goto(`${APP}/`, { waitUntil: 'commit' })
-    check('"Connecting…" (role=status) while it starts', (await seen(page, 'Connecting…')) && (await page.locator('[role="status"]:has-text("Connecting")').count()) > 0)
-    check('then the chat appears', (await until(async () => (await page.locator('input[placeholder="Type a message…"]').count()) > 0, 8000)).ok)
+    await page.goto(`${APP}/`, { waitUntil: 'load' })
+    const box = page.locator('input[placeholder="Type a message…"]')
+    check('a first-time visitor gets the composer at once (nothing to connect to)', (await box.count()) > 0 && !(await body(page)).includes('Connecting…'))
+    await sleep(3000)
+    check('and loading the page created no conversation', (await count()) === 0, await count())
+    await box.fill('hello from a first-time visitor')
+    await page.keyboard.press('Enter')
+    check('the first message shows at once with "Sending…" while its conversation is started', await seen(page, 'Sending…', 1200))
+    check('"Sending…" clears when it lands', (await until(async () => !(await body(page)).includes('Sending…'), 8000)).ok)
+    check('the message is in the thread', (await body(page)).includes('hello from a first-time visitor'))
+    const n = await until(async () => (await count()) === 1, 5000)
+    check('exactly one conversation now exists', n.ok, await count())
     const cid = await page.evaluate(() => Object.values(localStorage).find((v) => /^[0-9a-f-]{36}$/.test(v)))
     if (cid) ids.push(cid)
+    await ctx.close()
+  }
+
+  console.log('\n[6b] Customer page: returning visitor, remembered conversation (lookup held)')
+  {
+    const R = await makeConv({ customer_name: 'A11y Returning' }, [{ body: 'remembered customer message' }])
+    ids.push(R)
+    const f = { on: true }
+    const ctx = await browser.newContext({ viewport: { width: 700, height: 800 } })
+    await ctx.addInitScript((cid) => localStorage.setItem('frontdesk:customer-conversation-id', cid), R)
+    const page = await ctx.newPage()
+    await page.route('**/rest/v1/conversations*', slow(f, 'GET'))
+    await page.goto(`${APP}/`, { waitUntil: 'commit' })
+    check('"Connecting…" (role=status) while the remembered conversation is looked up', (await seen(page, 'Connecting…')) && (await page.locator('[role="status"]:has-text("Connecting")').count()) > 0)
+    check('with no "No messages yet" flash meanwhile', !(await body(page)).includes('No messages yet'))
+    check('then the history appears', (await until(async () => (await body(page)).includes('remembered customer message'), 12000)).ok)
     await ctx.close()
   }
 

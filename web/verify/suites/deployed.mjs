@@ -163,14 +163,17 @@ async function main() {
     const cp = await cctx.newPage()
     track(cp, 'customer')
     await cp.goto(`${APP}/`, { waitUntil: 'networkidle' })
+    await sleep(1500)
+    check('loading the customer page created no conversation', (await cp.evaluate(() => Object.values(localStorage).find((v) => /^[0-9a-f-]{36}$/.test(v)))) === undefined)
+    // The conversation is created by the first message, not by the page load.
+    const msg = `customer says hi ${Date.now()}`
+    await cp.fill('input[placeholder="Type a message…"]', msg)
+    await cp.keyboard.press('Enter')
     const cid = await until(async () => cp.evaluate(() => Object.values(localStorage).find((v) => /^[0-9a-f-]{36}$/.test(v))), 10000)
     const routedC = await until(async () => await assignee(cid.value), 20000, 200)
     check('customer-page conversation routed by webhook', routedC.ok, routedC.value)
     const ownerC = routedC.value === JORDAN ? jordan : sam
     await until(async () => (await sidebarIds(ownerC.page)).includes(cid.value), 10000)
-    const msg = `customer says hi ${Date.now()}`
-    await cp.fill('input[placeholder="Type a message…"]', msg)
-    await cp.keyboard.press('Enter')
     await ownerC.page.click(`[data-conversation-id="${cid.value}"]`)
     const agentGot = await ownerC.page.waitForSelector(`text=${msg}`, { timeout: 10000 }).then(() => true, () => false)
     check('customer → agent message arrives live on the deployed app', agentGot)

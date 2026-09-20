@@ -38,7 +38,10 @@ async function createCustomerConversation(browser) {
   const ctx = await browser.newContext()
   const page = await ctx.newPage()
   await page.goto(`${APP_URL}/`, { waitUntil: 'networkidle' })
-  await page.waitForSelector('input[placeholder="Type a message…"]', { timeout: 10000 })
+  // The page creates nothing on load; the conversation exists once the customer writes.
+  await page.fill('input[placeholder="Type a message…"]', 'A11y routing test message')
+  await page.keyboard.press('Enter')
+  await page.waitForFunction(() => localStorage.getItem('frontdesk:customer-conversation-id'), null, { timeout: 10000 })
   const conversationId = await page.evaluate(() =>
     localStorage.getItem('frontdesk:customer-conversation-id'),
   )
