@@ -40,6 +40,7 @@ const SUITES = [
   { name: 'loading-states', needs: ['app', 'host'], group: 'default', mins: 1 },
   { name: 'lost-webhook-recovery', needs: ['app', 'api'], group: 'default', mins: 1.5 },
   { name: 'pull-vs-sweep', needs: ['api'], group: 'default', mins: 3, note: 'a stress test of a known benign race (an agent occasionally ends with two); asserts only the hard invariants and reports the rate' },
+  { name: 'assigned-via', needs: ['app'], group: 'default', mins: 3, note: 'needs supabase/assigned-via.sql applied; reported as skipped until then. The webhook cases exercise the DEPLOYED functions' },
   { name: 'realtime-basic', needs: [], group: 'default', mins: 0.2 },
   { name: 'realtime-multi-channel', needs: [], group: 'default', mins: 0.2 },
   { name: 'claim-race', needs: ['app', 'api'], group: 'slow', mins: 10 },
@@ -92,6 +93,13 @@ for (const suite of selected) {
   const tally = [...text.matchAll(/(\d+) passed, (\d+) failed/g)].pop()
   const secs = ((Date.now() - t0) / 1000).toFixed(0)
   const ok = code === 0
+  if (code === 77) {
+    // A suite that finds a precondition missing exits 77: that is neither a pass nor a failure of the app.
+    const why = (text.match(/SKIPPED: (.*)/) ?? [])[1] ?? 'precondition missing'
+    console.log(`SKIP  ${suite.name.padEnd(28)} ${why}`)
+    results.push({ suite: suite.name, status: 'skipped', why })
+    continue
+  }
   console.log(`${ok ? 'PASS ' : 'FAIL '} ${suite.name.padEnd(28)} ${tally ? `${tally[1]} passed, ${tally[2]} failed` : `exit ${code}`}  (${secs}s)${ok ? '' : `  → ${path.relative(process.cwd(), log)}`}`)
   results.push({ suite: suite.name, status: ok ? 'passed' : 'failed', tally: tally?.[0] })
   await sleep(1000)
