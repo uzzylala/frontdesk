@@ -9,6 +9,8 @@ export interface ConversationEntry {
   previousAgentId: string | null
   messages: Message[]
   messagesLoading: boolean
+  /** The last attempt to load this conversation's history failed. */
+  historyError: boolean
   connectionStatus: ConnectionStatus
   draft: string
   unreadCount: number
@@ -34,6 +36,7 @@ interface ConsoleState {
   receiveMessage: (id: string, message: Message) => void
   setDraft: (id: string, draft: string) => void
   setMessagesLoading: (id: string, loading: boolean) => void
+  setHistoryError: (id: string, failed: boolean) => void
   setConnectionStatus: (id: string, status: ConnectionStatus) => void
 }
 
@@ -44,6 +47,7 @@ function emptyEntry({ id, customerName, previousAgentId }: AssignedConversation)
     previousAgentId,
     messages: [],
     messagesLoading: true,
+    historyError: false,
     connectionStatus: 'connecting',
     draft: '',
     unreadCount: 0,
@@ -163,6 +167,15 @@ export const useConsoleStore = create<ConsoleState>((set) => ({
       if (!entry) return state
       return {
         conversations: { ...state.conversations, [id]: { ...entry, messagesLoading } },
+      }
+    }),
+
+  setHistoryError: (id, historyError) =>
+    set((state) => {
+      const entry = state.conversations[id]
+      if (!entry) return state
+      return {
+        conversations: { ...state.conversations, [id]: { ...entry, historyError } },
       }
     }),
 

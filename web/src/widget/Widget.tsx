@@ -16,7 +16,8 @@ export function Widget({ apiBase, customerName, clientRouting }: WidgetProps) {
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState('')
   const { conversationId, ensureConversation } = useWidgetConversation({ apiBase, customerName, clientRouting })
-  useConversationChannel(conversationId)
+  const { retryHistory } = useConversationChannel(conversationId)
+  const historyError = useConversationStore((s) => s.historyError)
 
   const messages = useConversationStore((s) => s.messages)
   const messagesLoading = useConversationStore((s) => s.messagesLoading)
@@ -80,6 +81,8 @@ export function Widget({ apiBase, customerName, clientRouting }: WidgetProps) {
               messages={messages}
               onSent={addMessage}
               messagesLoading={conversationId ? messagesLoading : false}
+              historyError={conversationId ? historyError : false}
+              onRetryHistory={retryHistory}
               connectionStatus={conversationId ? connectionStatus : 'subscribed'}
               draft={draft}
               onDraftChange={setDraft}

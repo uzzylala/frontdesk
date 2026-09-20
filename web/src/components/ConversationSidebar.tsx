@@ -76,7 +76,7 @@ export function ConversationSidebar({
                 <p className="truncate text-xs text-slate-600">
                   {entry.messagesLoading
                     ? 'Loading…'
-                    : (lastMessage?.body ?? 'No messages yet')}
+                    : (lastMessage?.body ?? (entry.historyError ? "Couldn't load messages" : 'No messages yet'))}
                 </p>
               </button>
             </li>

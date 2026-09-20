@@ -27,6 +27,9 @@ interface ChatWindowProps {
    */
   onSent?: (message: Message) => void
   messagesLoading: boolean
+  /** The history failed to load: say so, rather than showing an empty conversation. */
+  historyError?: boolean
+  onRetryHistory?: () => void
   connectionStatus: ConnectionStatus
   draft: string
   onDraftChange: (draft: string) => void
@@ -48,6 +51,8 @@ export function ChatWindow({
   messages,
   onSent,
   messagesLoading,
+  historyError = false,
+  onRetryHistory,
   connectionStatus,
   draft,
   onDraftChange,
@@ -168,6 +173,19 @@ export function ChatWindow({
       >
         {messagesLoading ? (
           <p role="status" className="text-sm text-slate-600">Loading conversation…</p>
+        ) : historyError && messages.length === 0 ? (
+          <div role="alert" className="text-sm text-red-700">
+            <p>Couldn't load this conversation's messages.</p>
+            {onRetryHistory && (
+              <button
+                type="button"
+                onClick={onRetryHistory}
+                className="mt-2 rounded-md bg-indigo-700 px-3 py-1 text-xs font-medium text-white"
+              >
+                Try again
+              </button>
+            )}
+          </div>
         ) : messages.length === 0 && !showPending ? (
           <p className="text-sm text-slate-600">
             No messages yet — say hello.
@@ -216,6 +234,17 @@ export function ChatWindow({
           </>
         )}
       </div>
+
+      {historyError && messages.length > 0 && (
+        <p role="status" className="bg-amber-50 px-4 py-2 text-xs text-amber-900">
+          Some recent messages may be missing.{' '}
+          {onRetryHistory && (
+            <button type="button" onClick={onRetryHistory} className="font-medium underline">
+              Refresh
+            </button>
+          )}
+        </p>
+      )}
 
       <div className="border-t border-slate-200 p-3">
         {sendError && (

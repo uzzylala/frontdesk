@@ -5,6 +5,10 @@ import { supabase } from '../lib/supabase'
 import { useConsoleStore } from '../store/consoleStore'
 import type { Message } from '../types'
 
+/** Reloaders for each tracked conversation, so the UI can offer "Try again". */
+const historyLoaders = new Map<string, () => Promise<void>>()
+export const retryHistory = (id: string) => void historyLoaders.get(id)?.()
+
 /**
  * Keeps one Realtime channel per tracked conversation alive — not just the
  * one the agent currently has open, since a background conversation's
@@ -34,14 +38,25 @@ export function useConsoleChannels(conversationIds: string[]) {
       // again on every re-subscribe to back-fill messages missed in an outage.
       let loadedBefore = false
       const loadHistory = async () => {
+        // A retry from the error state shows the loading state again, rather than
+        // a button that seems to do nothing.
+        const current = useConsoleStore.getState().conversations[id]
+        if (current && current.messages.length === 0) {
+          useConsoleStore.getState().setMessagesLoading(id, true)
+        }
+        useConsoleStore.getState().setHistoryError(id, false)
+
         const { data, error } = await supabase
           .from('messages')
           .select('*')
           .eq('conversation_id', id)
           .order('created_at', { ascending: true })
         if (error) {
+          // Not the connection's fault (the channel may be fine): saying "couldn't
+          // connect to live updates" here would mislabel it, and an empty
+          // transcript would read as "no messages yet".
           console.error(`Failed to load messages for ${id}`, error)
-          useConsoleStore.getState().setConnectionStatus(id, 'error')
+          useConsoleStore.getState().setHistoryError(id, true)
         } else {
           const history = data as Message[]
           const store = useConsoleStore.getState()
@@ -107,12 +122,14 @@ export function useConsoleChannels(conversationIds: string[]) {
         })
 
       channelsRef.current.set(id, channel)
+      historyLoaders.set(id, loadHistory)
     }
 
     for (const [id, channel] of channelsRef.current) {
       if (!idsSet.has(id)) {
         supabase.removeChannel(channel)
         channelsRef.current.delete(id)
+        historyLoaders.delete(id)
       }
     }
     // conversationIds is derived fresh each render from the store's `order`
@@ -126,6 +143,7 @@ export function useConsoleChannels(conversationIds: string[]) {
     return () => {
       for (const channel of channels.values()) supabase.removeChannel(channel)
       channels.clear()
+      historyLoaders.clear()
     }
   }, [])
 }

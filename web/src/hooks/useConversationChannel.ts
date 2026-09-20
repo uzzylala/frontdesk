@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useConversationStore } from '../store/conversationStore'
 import type { Message } from '../types'
@@ -16,7 +16,10 @@ import type { Message } from '../types'
  * window, and doing it on every SUBSCRIBED also back-fills anything missed
  * while the connection was down. Overlap is harmless — messages merge by id.
  */
-export function useConversationChannel(conversationId: string | null) {
+export function useConversationChannel(conversationId: string | null): { retryHistory: () => void } {
+  const reload = useRef<() => Promise<void>>(async () => {})
+  const retryHistory = useCallback(() => void reload.current(), [])
+  const setHistoryError = useConversationStore((s) => s.setHistoryError)
   const setMessages = useConversationStore((s) => s.setMessages)
   const addMessage = useConversationStore((s) => s.addMessage)
   const setMessagesLoading = useConversationStore((s) => s.setMessagesLoading)
@@ -35,6 +38,10 @@ export function useConversationChannel(conversationId: string | null) {
     setConnectionStatus('connecting')
 
     async function loadHistory() {
+      // A retry from the error state shows the loading state again, rather than
+      // a button that seems to do nothing.
+      if (useConversationStore.getState().messages.length === 0) setMessagesLoading(true)
+      setHistoryError(false)
       const { data, error } = await supabase
         .from('messages')
         .select('*')
@@ -42,14 +49,16 @@ export function useConversationChannel(conversationId: string | null) {
         .order('created_at', { ascending: true })
       if (cancelled) return
       if (error) {
+        // Not the connection's fault: see useConsoleChannels.
         console.error('Failed to load messages', error)
-        setConnectionStatus('error')
+        setHistoryError(true)
       } else {
         setMessages(data as Message[])
       }
       setMessagesLoading(false)
     }
 
+    reload.current = loadHistory
     const channel = supabase
       .channel(`conversation:${conversationId}`)
       .on(
@@ -78,5 +87,7 @@ export function useConversationChannel(conversationId: string | null) {
       cancelled = true
       supabase.removeChannel(channel)
     }
-  }, [conversationId, setMessages, addMessage, setMessagesLoading, setConnectionStatus])
+  }, [conversationId, setMessages, addMessage, setMessagesLoading, setHistoryError, setConnectionStatus])
+
+  return { retryHistory }
 }

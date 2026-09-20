@@ -13,6 +13,7 @@ import { useCurrentAgent } from "../hooks/useCurrentAgent";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { expectSelfClaim, forgetSelfClaim } from "../lib/consoleEvents";
 import { supabase } from "../lib/supabase";
+import { retryHistory } from "../hooks/useConsoleChannels";
 import { useConsoleStore } from "../store/consoleStore";
 
 export function AgentConsolePage() {
@@ -338,6 +339,8 @@ function ConsoleBody({
                         conversationId={id}
                         role="agent"
                         counterpart={entry.customerName}
+                        historyError={entry.historyError}
+                        onRetryHistory={() => retryHistory(id)}
                         inputRef={(el) => {
                           if (el) inputRefs.current.set(id, el);
                           else inputRefs.current.delete(id);

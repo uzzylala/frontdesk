@@ -14,7 +14,8 @@ export function CustomerChatPage() {
   const messagesLoading = useConversationStore((s) => s.messagesLoading)
   const connectionStatus = useConversationStore((s) => s.connectionStatus)
   const addMessage = useConversationStore((s) => s.addMessage)
-  useConversationChannel(conversationId)
+  const { retryHistory } = useConversationChannel(conversationId)
+  const historyError = useConversationStore((s) => s.historyError)
   useSupportReplyAnnouncements(conversationId, messages, messagesLoading)
   useDocumentTitle('Chat with us — Frontdesk')
   const [draft, setDraft] = useState('')
@@ -48,6 +49,8 @@ export function CustomerChatPage() {
             messages={messages}
             onSent={addMessage}
             messagesLoading={messagesLoading}
+            historyError={historyError}
+            onRetryHistory={retryHistory}
             connectionStatus={connectionStatus}
             draft={draft}
             onDraftChange={setDraft}

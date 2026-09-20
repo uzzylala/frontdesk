@@ -10,7 +10,7 @@ import type { ConversationEntry } from '../store/consoleStore'
 export function describeConversation(
   entry: Pick<
     ConversationEntry,
-    'customerName' | 'unreadCount' | 'previousAgentId' | 'connectionStatus' | 'messagesLoading' | 'messages'
+    'customerName' | 'unreadCount' | 'previousAgentId' | 'connectionStatus' | 'messagesLoading' | 'historyError' | 'messages'
   >,
   agentNames: Record<string, string>,
 ): string {
@@ -25,7 +25,15 @@ export function describeConversation(
   if (entry.connectionStatus === 'error') parts.push('connection issue')
 
   const last = entry.messages[entry.messages.length - 1]
-  parts.push(entry.messagesLoading ? 'loading' : last ? `last message: ${last.body}` : 'no messages yet')
+  parts.push(
+    entry.messagesLoading
+      ? 'loading'
+      : last
+        ? `last message: ${last.body}`
+        : entry.historyError
+          ? "couldn't load messages"
+          : 'no messages yet',
+  )
 
   return parts.join(', ')
 }

@@ -10,6 +10,8 @@ interface ConversationState {
   freshConversationId: string | null
   messages: Message[]
   messagesLoading: boolean
+  /** The last attempt to load the history failed. */
+  historyError: boolean
   connectionStatus: ConnectionStatus
   setConversationId: (id: string | null) => void
   /** Switch to a conversation this client just created — already loaded, and empty. */
@@ -17,6 +19,7 @@ interface ConversationState {
   setMessages: (messages: Message[]) => void
   addMessage: (message: Message) => void
   setMessagesLoading: (loading: boolean) => void
+  setHistoryError: (failed: boolean) => void
   setConnectionStatus: (status: ConnectionStatus) => void
 }
 
@@ -25,6 +28,7 @@ export const useConversationStore = create<ConversationState>((set) => ({
   freshConversationId: null,
   messages: [],
   messagesLoading: true,
+  historyError: false,
   connectionStatus: 'connecting',
   setConversationId: (id) => set({ conversationId: id }),
   startConversation: (id) =>
@@ -37,5 +41,6 @@ export const useConversationStore = create<ConversationState>((set) => ({
       return { messages: [...state.messages, message] }
     }),
   setMessagesLoading: (messagesLoading) => set({ messagesLoading }),
+  setHistoryError: (historyError) => set({ historyError }),
   setConnectionStatus: (connectionStatus) => set({ connectionStatus }),
 }))
