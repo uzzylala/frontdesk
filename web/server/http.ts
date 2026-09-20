@@ -1,6 +1,7 @@
 export interface Req {
   method?: string
   body?: unknown
+  headers?: Record<string, string | string[] | undefined>
 }
 
 export interface Res {
@@ -45,4 +46,31 @@ export function handleCors(req: Req, res: Res): boolean {
     return true
   }
   return false
+}
+
+/**
+ * One structured log line per routing invocation, so "who triggered this?" is
+ * answerable from the server's own logs instead of taken on trust.
+ *
+ * A browser's JSON POST always carries an `Origin` header; a Postgres webhook
+ * (pg_net) sends none and identifies itself in the user-agent. So
+ * `caller: "server"` with a pg_net user-agent means the database called us,
+ * and `caller: "browser"` means a page did. No IPs or bodies are logged.
+ */
+export function logCaller(fn: string, req: Req): void {
+  const header = (name: string) => {
+    const v = req.headers?.[name]
+    return (Array.isArray(v) ? v[0] : v) ?? null
+  }
+  const origin = header('origin')
+  const body = (req.body ?? {}) as { table?: unknown }
+  console.log(
+    JSON.stringify({
+      fn,
+      caller: origin ? 'browser' : 'server',
+      origin,
+      userAgent: header('user-agent')?.slice(0, 80) ?? null,
+      payload: typeof body.table === 'string' ? 'webhook' : 'direct',
+    }),
+  )
 }

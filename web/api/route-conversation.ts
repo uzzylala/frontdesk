@@ -1,4 +1,4 @@
-import { handleCors, targetId, type Req, type Res } from '../server/http.js'
+import { handleCors, logCaller, targetId, type Req, type Res } from '../server/http.js'
 import { assignNewConversation } from '../server/routing.js'
 import { createAdminClient } from '../server/supabaseAdmin.js'
 
@@ -17,6 +17,8 @@ export default async function handler(req: Req, res: Res) {
     res.status(405).json({ error: 'Method not allowed' })
     return
   }
+
+  logCaller('route-conversation', req)
 
   const conversationId = targetId(req.body, 'conversationId', 'conversations')
   if (!conversationId) {

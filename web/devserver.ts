@@ -78,7 +78,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   }
 
   try {
-    await handler({ method: req.method, body }, adaptedRes)
+    await handler({ method: req.method, body, headers: req.headers }, adaptedRes)
   } catch (err) {
     console.error(`Unhandled error in ${url}`, err)
     res.writeHead(500, { 'Content-Type': 'application/json' })

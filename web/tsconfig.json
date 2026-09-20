@@ -3,5 +3,8 @@
   "references": [
     { "path": "./tsconfig.app.json" },
     { "path": "./tsconfig.node.json" }
-  ]
+  ],
+  // `tsc -b` compiles nothing from this file. Vercel, however, type-checks the
+  // serverless functions in api/ and server/ against it, and they use `process`.
+  "compilerOptions": { "types": ["node"] }
 }
