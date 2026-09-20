@@ -8,7 +8,7 @@ import { useSupportReplyAnnouncements } from '../hooks/useSupportReplyAnnounceme
 import { useConversationStore } from '../store/conversationStore'
 
 export function CustomerChatPage() {
-  const { loading, error } = useCustomerConversation()
+  const { loading, error, retry } = useCustomerConversation()
   const conversationId = useConversationStore((s) => s.conversationId)
   const messages = useConversationStore((s) => s.messages)
   const messagesLoading = useConversationStore((s) => s.messagesLoading)
@@ -38,9 +38,16 @@ export function CustomerChatPage() {
         {loading ? (
           <p role="status" className="p-4 text-sm text-slate-600">Connecting…</p>
         ) : error ? (
-          <p role="alert" className="p-4 text-sm text-red-700">
-            Couldn't start a conversation: {error}
-          </p>
+          <div role="alert" className="p-4 text-sm text-red-700">
+            <p>Couldn't start a conversation: {error}</p>
+            <button
+              type="button"
+              onClick={retry}
+              className="mt-2 rounded-md bg-indigo-700 px-3 py-1 text-xs font-medium text-white"
+            >
+              Try again
+            </button>
+          </div>
         ) : conversationId ? (
           <ChatWindow
             conversationId={conversationId}

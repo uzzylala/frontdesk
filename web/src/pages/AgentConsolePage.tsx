@@ -22,6 +22,7 @@ export function AgentConsolePage() {
     currentAgent,
     loading,
     error,
+    retry: retryAgents,
     selectAgent,
     switchAgent,
     setStatus,
@@ -55,9 +56,16 @@ export function AgentConsolePage() {
     );
   if (error)
     return (
-      <p role="alert" className="p-4 text-sm text-red-700">
-        Couldn't load agents: {error}
-      </p>
+      <div role="alert" className="p-4 text-sm text-red-700">
+        <p>Couldn't load agents: {error}</p>
+        <button
+          type="button"
+          onClick={retryAgents}
+          className="mt-2 rounded-md bg-indigo-700 px-3 py-1 text-xs font-medium text-white"
+        >
+          Try again
+        </button>
+      </div>
     );
 
   if (!currentAgent) {

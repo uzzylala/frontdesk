@@ -11,6 +11,8 @@ interface Result {
   currentAgent: Agent | null
   loading: boolean
   error: string | null
+  /** After a failed first load: try again without reloading the page. */
+  retry: () => void
   selectAgent: (id: string) => void
   switchAgent: () => void
   /** Resolves false if the change could not be saved. */
@@ -108,6 +110,12 @@ export function useCurrentAgent(): Result {
     }
   }, [fetchAgents])
 
+  const retry = useCallback(() => {
+    setError(null)
+    setLoading(true)
+    void fetchAgents()
+  }, [fetchAgents])
+
   const currentAgent = agents.find((a) => a.id === currentAgentId) ?? null
 
   function selectAgent(id: string) {
@@ -149,5 +157,5 @@ export function useCurrentAgent(): Result {
     return true
   }
 
-  return { agents, currentAgent, loading, error, selectAgent, switchAgent, setStatus }
+  return { agents, currentAgent, loading, error, retry, selectAgent, switchAgent, setStatus }
 }

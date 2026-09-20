@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { postJson } from '../lib/api'
 import { CLIENT_TRIGGERS_ROUTING } from '../lib/routingTrigger'
 import { supabase } from '../lib/supabase'
@@ -9,6 +9,8 @@ const STORAGE_KEY = 'frontdesk:customer-conversation-id'
 interface Result {
   loading: boolean
   error: string | null
+  /** After a failure to start: try again without reloading the page. */
+  retry: () => void
 }
 
 type Resolution = { id: string } | { error: string }
@@ -70,6 +72,7 @@ export function useCustomerConversation(): Result {
   const setConversationId = useConversationStore((s) => s.setConversationId)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -91,7 +94,13 @@ export function useCustomerConversation(): Result {
     return () => {
       cancelled = true
     }
-  }, [setConversationId])
+  }, [setConversationId, attempt])
 
-  return { loading, error }
+  const retry = useCallback(() => {
+    setError(null)
+    setLoading(true)
+    setAttempt((n) => n + 1)
+  }, [])
+
+  return { loading, error, retry }
 }
