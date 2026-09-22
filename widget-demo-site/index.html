@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <link rel="icon" href="data:," />
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Acme Widgets Co. — a very opinionated website</title>
+    <!--
+      A deliberately hostile host page, deployed on its own domain so the widget
+      embed below is genuinely cross-origin from the Frontdesk app it talks to
+      (https://frontdesk-sigma-mocha.vercel.app). Same fixture as web/widget-demo,
+      pointed at the deployed widget.js and API instead of localhost. Its CSS is
+      written to break anything that isn't isolated from it: a huge root
+      font-size (rem trap), universal selectors, and !important overrides on
+      the exact element types the chat widget uses (button, input, div, p, svg).
+    -->
+    <style>
+      html { font-size: 28px; }
+      * { box-sizing: content-box !important; cursor: crosshair; }
+      body {
+        margin: 0;
+        font-family: 'Comic Sans MS', 'Chalkboard SE', cursive;
+        background: #fff3cd;
+        color: #b00020;
+        line-height: 2.2;
+        letter-spacing: 1.5px;
+      }
+      /* Aimed at anything that is a direct child of <body> — including a
+         custom-element anchor the widget adds there. */
+      body > * { margin: 0 0 24px 0; border-bottom: 3px solid #ff9800; padding: 8px; }
+      header { background: #6a1b9a; color: #ffeb3b; padding: 20px; }
+      h1 {
+        font-size: 3rem; color: crimson; text-transform: uppercase;
+        text-shadow: 3px 3px 0 #000; margin: 0;
+      }
+      h2 { font-size: 1.6rem; color: #1b5e20; text-decoration: underline wavy; }
+      p { color: teal; font-style: italic; text-decoration: underline; }
+      div { border-left: 6px solid orange; margin: 12px; padding: 8px; }
+      section { max-width: 900px; margin: 0 auto; }
+      a { color: #d500f9; font-weight: 900; }
+      button {
+        background: hotpink !important; color: lime !important;
+        border: 4px dashed purple !important; border-radius: 0 !important;
+        font: 900 22px 'Times New Roman' !important;
+        padding: 18px 30px !important; text-transform: uppercase !important;
+      }
+      input {
+        background: yellow !important; border: 5px double red !important;
+        font-size: 30px !important; color: blue !important;
+      }
+      svg { fill: red !important; stroke: red !important; width: 120px !important; }
+      ul { list-style: square; color: #01579b; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Acme Widgets Co.</h1>
+      <p>Since 1987 — quality widgets for discerning customers</p>
+    </header>
+
+    <section id="products">
+      <h2>Our products</h2>
+      <div class="card">
+        <p>The Classic Widget. Reliable. Round-ish. Sometimes blue.</p>
+        <button id="host-buy" type="button">Buy now</button>
+      </div>
+      <div class="card">
+        <p>The Deluxe Widget. Everything the Classic has, but louder.</p>
+        <input id="host-email" type="text" value="you@example.com" />
+      </div>
+      <ul>
+        <li>Free shipping over $50</li>
+        <li>30-day returns</li>
+      </ul>
+    </section>
+
+    <section id="about">
+      <h2>About us</h2>
+      <p>
+        We are a small team of widget enthusiasts. If you have a question, use the
+        chat bubble in the corner — it is a third-party widget embedded with a single
+        script tag, and this page's styling should not be able to touch it (or the
+        other way around).
+      </p>
+      <p>
+        (This page is a Frontdesk portfolio fixture: a deliberately hostile host
+        page, on its own domain, embedding the widget from
+        frontdesk-sigma-mocha.vercel.app to prove the isolation holds across
+        origins — not real.)
+      </p>
+    </section>
+
+    <!-- The entire integration: one script tag. -->
+    <script
+      src="https://frontdesk-sigma-mocha.vercel.app/widget.js"
+      data-api-url="https://frontdesk-sigma-mocha.vercel.app"
+      data-customer-name="Demo Visitor"
+    ></script>
+  </body>
+</html>

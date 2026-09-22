@@ -4,6 +4,14 @@ A live customer support chat and queue platform: an embeddable customer-facing
 widget plus a separate agent console, built on Supabase Realtime (Postgres
 logical replication) instead of a self-hosted socket server.
 
+**Live:** [customer page](https://frontdesk-sigma-mocha.vercel.app/) ·
+[agent console](https://frontdesk-sigma-mocha.vercel.app/agent) ·
+[a third-party site embedding the widget](https://widget-demo-site-delta.vercel.app/)
+(deployed separately, on its own domain, so the embed is genuinely
+cross-origin — see `widget-demo-site/`). All three talk to the same shared
+Supabase project; there's no tenant separation yet, so anything sent from any
+of them is visible to the two demo agents in one shared queue.
+
 ## Stack
 
 - **Frontend:** React + TypeScript, Tailwind CSS, Zustand
@@ -17,7 +25,10 @@ logical replication) instead of a self-hosted socket server.
 ```
 web/            agent console + embeddable widget (Vite)
 web/src/widget/ the embeddable widget (own build: vite.widget.config.ts)
-web/widget-demo/  a deliberately hostile fake company site that embeds it
+web/widget-demo/  the fake company site, wired to localhost (npm run widget:demo)
+widget-demo-site/ the same page wired to the deployed widget.js + API instead;
+                 its own Vercel project/domain, not built by web/ — redeploy with
+                 `vercel deploy widget-demo-site --prod`
 web/api/        Vercel serverless functions (thin HTTP adapters)
 web/server/     framework-agnostic routing logic + service-role client (server-only)
 web/devserver.ts  local stand-in that serves web/api during `npm run dev`
