@@ -18,7 +18,7 @@ of them is visible to the two demo agents in one shared queue.
 - **Realtime:** Supabase Realtime (Postgres change data capture + Presence)
 - **Database:** Supabase Postgres
 - **Backend:** Vercel
-- **Hosting:** Verce
+- **Hosting:** Vercel
 
 ## Layout
 
@@ -199,9 +199,9 @@ null`). An agent going online is handed the oldest queued conversation.
 
 **The failure mode.** Routing is event-driven: a Postgres trigger calls a
 serverless function when a conversation is inserted (`supabase/webhooks.sql`).
-pg_net delivery is asynchronous and fire-and-forget by design, so a call can be
+pg*net delivery is asynchronous and fire-and-forget by design, so a call can be
 lost or fail (function error, cold start past the timeout, an outage) and
-_nothing retries it_. The conversation then sits in the queue indefinitely,
+\_nothing retries it*. The conversation then sits in the queue indefinitely,
 while an agent who is online, connected and idle looks on and the customer
 waits. I reproduced exactly this state and measured it: still queued after 46s,
 with no trigger that would ever fire again.
@@ -416,7 +416,6 @@ was 88, 98, 89, 94 (local build) and finally 99 across five runs, and its deskto
 100 in all but one (86, on a 300 ms blocking-time blip). Read them as a band, not a
 point; the table is the last run against the deployed app, after the ghost-conversation
 fix, and accessibility, best-practices and SEO were stable in every run.
-it.
 
 ## Build phases
 
