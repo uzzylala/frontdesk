@@ -17,8 +17,8 @@ of them is visible to the two demo agents in one shared queue.
 - **Frontend:** React + TypeScript, Tailwind CSS, Zustand
 - **Realtime:** Supabase Realtime (Postgres change data capture + Presence)
 - **Database:** Supabase Postgres
-- **Backend:** Vercel/Netlify serverless functions (routing, CRUD) — added in phase 3
-- **Hosting:** Vercel or Netlify (frontend + functions), Supabase (DB + realtime)
+- **Backend:** Vercel
+- **Hosting:** Verce
 
 ## Layout
 
@@ -45,9 +45,9 @@ supabase/       schema, seed data, and webhook definitions
   by `conversation_id`. An agent handling several conversations holds one
   subscription per conversation, so there is no client-side filtering and no
   cross-talk between chats by construction.
-- **Presence:** two signals, deliberately kept separate. *Intent* is
+- **Presence:** two signals, deliberately kept separate. _Intent_ is
   `agents.status` (online/busy/away) — what the agent last clicked, persisted
-  in Postgres. *Liveness* is Supabase Realtime Presence — whether their client
+  in Postgres. _Liveness_ is Supabase Realtime Presence — whether their client
   is actually connected, held in Realtime's memory and shown instantly to
   every console. The UI combines them: a connected agent shows their intent;
   a disconnected one shows **Offline** if they'd set themselves away, or
@@ -83,11 +83,11 @@ supabase/       schema, seed data, and webhook definitions
   agent. An agent who never connected is never reaped.
 - **Widget isolation:** `widget.js` is a single IIFE that adds a
   `<frontdesk-widget>` custom element with an open shadow root and mounts
-  React inside it. Tailwind's CSS is injected *inside* the shadow root, never
+  React inside it. Tailwind's CSS is injected _inside_ the shadow root, never
   into the host document. Four things get past a shadow boundary and are
   handled explicitly (`src/widget/shadowCss.ts`): Tailwind v4's `@property`
   rules are ignored in shadow trees (so borders/shadows silently vanish —
-  hoisted to `:host` defaults); `rem` resolves against the *host page's*
+  hoisted to `:host` defaults); `rem` resolves against the _host page's_
   root font-size (converted to px); inherited properties cross the boundary
   (`all: initial` on the inner root); and the host element itself sits in the
   page's cascade (`!important` rules on `:host`, since inner-context
@@ -99,7 +99,7 @@ supabase/       schema, seed data, and webhook definitions
   load, so every visit, including bots and people who never typed, left an
   empty conversation in the queue and had it routed to an agent. Now loading
   creates nothing, and a returning visitor's remembered conversation is only
-  *looked up*, where a failed lookup is an error with "Try again" rather than
+  _looked up_, where a failed lookup is an error with "Try again" rather than
   being read as "none" (which would have started a second conversation and
   orphaned the first). The trade-off: the first message is now two round trips
   (create the conversation, then insert the message), so if the second fails the
@@ -108,14 +108,14 @@ supabase/       schema, seed data, and webhook definitions
 
 - **Accessibility:** built for keyboard and screen-reader use, and checked with
   a real screen reader (see "How it was verified").
-  - *Semantics.* The console has real landmarks (banner, main, a labelled
+  - _Semantics._ The console has real landmarks (banner, main, a labelled
     conversations `nav` holding a `ul`), each page has its own `<title>`, the
     status control is a native radio group (fieldset + legend), each
     conversation-list item's accessible name carries who, unread count,
     "transferred from …", connection trouble and the last message (the coloured
     badge is decoration), and each transcript is a `role="log"` with
     `aria-live="off"` so it's navigable but never speaks on its own.
-  - *Keyboard.* Tab order: skip links ("Skip to conversations", "Skip to message
+  - _Keyboard._ Tab order: skip links ("Skip to conversations", "Skip to message
     box") → Switch agent → status (one stop; arrows change it) → queue
     "Pick up" buttons → conversation list → transcript → message box. Enter on a
     conversation opens it and moves focus to its message box; Escape in the box
@@ -124,7 +124,7 @@ supabase/       schema, seed data, and webhook definitions
     view's heading instead of dropping it on `<body>`. The widget moves focus
     into its box on open, back to its launcher on close, and closes on Escape.
     One `:focus-visible` ring everywhere (also inside the widget's shadow root).
-  - *Announcements* go through one polite, atomic live region mounted at the
+  - _Announcements_ go through one polite, atomic live region mounted at the
     page root — not one per component, because the console's inactive
     conversations are `display: none`, where a live region is never spoken.
     Producers only emit facts (`lib/consoleEvents.ts`); one hook batches them
@@ -135,12 +135,12 @@ supabase/       schema, seed data, and webhook definitions
     opening the console reads out nothing — and never your own replies or your
     own queue claims. Customers (page and widget) hear "Support: …" for replies,
     including while the widget is closed. "Message sent" confirms a send.
-  - *Contrast.* axe's WCAG 2.2 AA colour-contrast rule passes in every state
+  - _Contrast._ axe's WCAG 2.2 AA colour-contrast rule passes in every state
     tested (non-text contrast of borders was checked by hand). The old `slate-400` secondary text
     (2.6:1) is `slate-500/600`; white-on-`emerald-600/amber-500/slate-400`
     status pills are `emerald-700/amber-700/slate-600`; control borders are
     `slate-500` (3:1+ non-text contrast).
-  - *How it was verified* (Chrome, Windows). **axe-core 4.13** (WCAG 2.2 A/AA +
+  - _How it was verified_ (Chrome, Windows). **axe-core 4.13** (WCAG 2.2 A/AA +
     best practice) over the agent picker, the populated console (unread,
     transferred and queued items), the "Connection lost" banner, the customer
     page, and the widget closed / open-empty / open-with-conversation: 0
@@ -157,15 +157,15 @@ supabase/       schema, seed data, and webhook definitions
     "A11y Unread, 11 unread messages, transferred from Sam K., last message:
     burst 9, button", "10 new messages from A11y Unread.", "Open chat, button,
     collapsed".
-  - *Not covered.* NVDA + Chrome only: not VoiceOver, JAWS, TalkBack or Firefox.
+  - _Not covered._ NVDA + Chrome only: not VoiceOver, JAWS, TalkBack or Firefox.
     NVDA was driven with synthetic keyboard events over CDP rather than a
     physical keyboard, and automated checks catch only part of what a person
     would. Not a substitute for testing with users who rely on these tools.
 - **Routing:** a new conversation is assigned to the online agent with the
   fewest open conversations; ties go to whoever was assigned least recently,
   then to the lowest agent id (fully deterministic). No online agent means the
-  conversation stays unassigned — that *is* the queue (`assigned_agent_id is
-  null`). An agent going online is handed the oldest queued conversation.
+  conversation stays unassigned — that _is_ the queue (`assigned_agent_id is
+null`). An agent going online is handed the oldest queued conversation.
   Going away/busy stops new routing but never strips existing assignments.
 - **Where routing runs:** serverless, because it needs the service-role key
   and a single consistent view of agent load. In production it's triggered by
@@ -183,8 +183,8 @@ supabase/       schema, seed data, and webhook definitions
   doesn't replay what it missed, so each hook re-reads on its own
   re-subscribe: agent statuses, assignments and missed customer messages are
   caught up, and — through the same live region as anything live — spoken.
-  A failed *re*-sync keeps the stale-but-real console on screen with a quiet
-  notice and retries with backoff; only a failed *first* load blocks the view,
+  A failed _re_-sync keeps the stale-but-real console on screen with a quiet
+  notice and retries with backoff; only a failed _first_ load blocks the view,
   and it has a Try again button. A failed history load is its own state (not
   "No messages yet"). The widget never treats a failed lookup of the visitor's
   saved conversation as "none", so a network blip can't start a second one. A
@@ -201,14 +201,14 @@ supabase/       schema, seed data, and webhook definitions
 serverless function when a conversation is inserted (`supabase/webhooks.sql`).
 pg_net delivery is asynchronous and fire-and-forget by design, so a call can be
 lost or fail (function error, cold start past the timeout, an outage) and
-*nothing retries it*. The conversation then sits in the queue indefinitely,
+_nothing retries it_. The conversation then sits in the queue indefinitely,
 while an agent who is online, connected and idle looks on and the customer
 waits. I reproduced exactly this state and measured it: still queued after 46s,
 with no trigger that would ever fire again.
 
 **The decision.** Every console already runs a `reap-disconnected` sweep every
 10s. That sweep now also calls `routeStrandedQueue`, which routes conversations
-that have sat in the queue for 15s or more, oldest first, through the *same*
+that have sat in the queue for 15s or more, oldest first, through the _same_
 `assignNewConversation` compare-and-set the webhook uses. Two consequences of
 reusing it: racing the webhook (or another console's sweep) can't double-assign,
 and no new infrastructure is needed (a cron job, a queue, a second service).
@@ -217,7 +217,7 @@ path for a fresh conversation. Measured recovery: **~25s** (the gate plus at
 most one sweep interval).
 
 **Why it is bounded to idle agents only.** The sweep assigns only to an agent
-who is online, connected, and has *nothing open*. This is deliberate, not a
+who is online, connected, and has _nothing open_. This is deliberate, not a
 shortcut. An agent who comes online is specified to be handed just the oldest
 queued conversation, and "queued conversation + online agent" is the same
 database state whether a webhook was lost or a backlog is simply waiting. An
@@ -231,7 +231,7 @@ back if the agent now has more than one. The pull is never undone, so it always
 wins the tie.
 
 **Known limitation.** If every online agent already has something open, a
-stranded conversation is *not* rescued: it waits for a manual pickup or for the
+stranded conversation is _not_ rescued: it waits for a manual pickup or for the
 next agent to come online. The fallback is weaker than the primary path, which
 would have given it to the least-busy agent regardless of load. Closing that gap
 means deciding that a waiting backlog should draw down onto busy agents, which is
@@ -245,7 +245,7 @@ manual pickups, which happen in the browser, stay `NULL`; apply
 unaffected). That makes "how often is the webhook actually failing?" a query
 rather than a guess (it is in `assigned-via.sql`): among never-reassigned
 conversations, the share tagged `recovery_sweep` versus `webhook`. Read it with
-its caveats: it *under*-counts (a lost webhook whose conversation an agent picked
+its caveats: it _under_-counts (a lost webhook whose conversation an agent picked
 up by hand first is tagged `NULL`), the tag is the latest assignment rather than a
 history, and the function logs that carry the event stream are short-lived on
 Vercel's free plan.
@@ -254,7 +254,7 @@ Vercel's free plan.
 "Is the agent idle?" and "assign" are two statements, so the sweep and a queue pull
 (an agent coming online) can interleave, in two ways. If the pull lands first and
 the sweep second, the sweep's re-count sees two and gives its own back; that is
-the case the safeguard handles. If the *sweep* fills the idle agent first and the
+the case the safeguard handles. If the _sweep_ fills the idle agent first and the
 pull lands second, nothing undoes the pull (by design), so the agent ends with two
 conversations instead of one. That is benign (a queued customer reaches an agent
 sooner) but it is not the specified one-pull rule, and it is not prevented; an
@@ -263,9 +263,9 @@ occasional "two" is a known outcome.
 The give-back was added after the phase 4 reconnect check failed in 2 of 3 runs; it
 passed 3 of 3 (28/28) afterwards. That is an observed correlation. A dedicated stress
 test of the race (`web/verify/suites/pull-vs-sweep.mjs`) has not confirmed the safeguard's
-effect: it gave 12/12 correct results with *and* without the change, and later 2
+effect: it gave 12/12 correct results with _and_ without the change, and later 2
 "two" outcomes in 12 with it, so the outcome varies run to run and the test cannot
-separate the two arms. Unit tests do pin the *logic*: given the interleaving
+separate the two arms. Unit tests do pin the _logic_: given the interleaving
 "pull lands right after the sweep's write", the give-back fires (and the suite goes
 red if it is removed). What no test shows is how often that interleaving happens in
 production. Treat the safeguard as reasoned and unit-tested, not empirically
@@ -323,6 +323,7 @@ vantage points:
 
    `caller: "browser"` would show the page's origin instead. Any such line
    means something in a page is still triggering routing.
+
 3. **No browser at all.** `npm run verify:webhooks` (from `web/`) drives the
    whole thing through the Supabase API: it inserts a conversation, then sets
    an agent online with a queue waiting, and asserts the right agent got the
@@ -350,12 +351,12 @@ instrument does discriminate.
 Four layers, each answering a different question (details and caveats in
 [`web/verify/README.md`](web/verify/README.md)):
 
-| Layer | Command | What it establishes |
-|---|---|---|
-| Unit | `npm test` | The real routing code (`server/routing.ts`) on an in-memory database: least-busy selection and its tie-breaks, compare-and-set assignment, the queue pull, reassignment on disconnect, the recovery sweep and its give-back, plus announcement wording and batching. 40 tests, no network. |
-| End to end | `npm run test:e2e` | One Playwright test of the whole product: a customer starts a chat → it routes to an online agent → the agent replies → that agent's connection dies → the conversation is reassigned to the other agent, who is told → they reply → the customer sees one unbroken thread. |
-| Verification suites | `npm run verify` | 19 suites in the default set (22 in all, counting the slow and manual ones): routing, presence, the widget, reconnects, accessibility, failure and loading states, races, against the real app and database. ~35 minutes. |
-| Checks | `npm run check:env`, `npm run lighthouse` | Secret scoping (below) and Lighthouse (below). |
+| Layer               | Command                                   | What it establishes                                                                                                                                                                                                                                                                        |
+| ------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Unit                | `npm test`                                | The real routing code (`server/routing.ts`) on an in-memory database: least-busy selection and its tie-breaks, compare-and-set assignment, the queue pull, reassignment on disconnect, the recovery sweep and its give-back, plus announcement wording and batching. 40 tests, no network. |
+| End to end          | `npm run test:e2e`                        | One Playwright test of the whole product: a customer starts a chat → it routes to an online agent → the agent replies → that agent's connection dies → the conversation is reassigned to the other agent, who is told → they reply → the customer sees one unbroken thread.                |
+| Verification suites | `npm run verify`                          | 19 suites in the default set (22 in all, counting the slow and manual ones): routing, presence, the widget, reconnects, accessibility, failure and loading states, races, against the real app and database. ~35 minutes.                                                                  |
+| Checks              | `npm run check:env`, `npm run lighthouse` | Secret scoping (below) and Lighthouse (below).                                                                                                                                                                                                                                             |
 
 How much to trust the tests: the unit suite was **mutation-tested** — I broke
 `routing.ts` eight deliberate ways (most-busy wins, no compare-and-set on assign or
@@ -389,11 +390,11 @@ porting them into the repo meant reading credentials from the environment instea
 desktop), measured against the **deployed** app; the widget host page is the local
 demo page (compressed) loading the widget bundle.
 
-| Page | Form | Perf | A11y | Best practices | SEO |
-|---|---|---|---|---|---|
-| Customer page | mobile / desktop | 99 / 100 | 100 / 100 | 100 / 100 | 100 / 100 |
-| Agent console | mobile / desktop | 94 / 100 | 100 / 100 | 100 / 100 | 63 / 63 |
-| Widget on a host page | mobile / desktop | 99 / 100 | 88 / 88 | 100 / 100 | 90 / 90 |
+| Page                  | Form             | Perf     | A11y      | Best practices | SEO       |
+| --------------------- | ---------------- | -------- | --------- | -------------- | --------- |
+| Customer page         | mobile / desktop | 99 / 100 | 100 / 100 | 100 / 100      | 100 / 100 |
+| Agent console         | mobile / desktop | 94 / 100 | 100 / 100 | 100 / 100      | 63 / 63   |
+| Widget on a host page | mobile / desktop | 99 / 100 | 88 / 88   | 100 / 100      | 90 / 90   |
 
 Reading the numbers rather than quoting them: the agent console's SEO of 63 is the
 intended result of `robots.txt` disallowing `/agent` (Lighthouse flags "page is
@@ -415,16 +416,7 @@ was 88, 98, 89, 94 (local build) and finally 99 across five runs, and its deskto
 100 in all but one (86, on a 300 ms blocking-time blip). Read them as a band, not a
 point; the table is the last run against the deployed app, after the ghost-conversation
 fix, and accessibility, best-practices and SEO were stable in every run.
-
-### Known limitations
-
-- A browser can freeze or discard a tab outright (e.g. Chrome's Memory Saver
-  on a long-idle tab). Nothing, workers included, runs then, so the console is
-  treated as disconnected and its conversations are reassigned. That is the
-  right outcome for a console that has really stopped, but it means "left
-  open in a tab" isn't a guarantee.
-- Widget bundle is ~130 KB gzipped (React + supabase-js); aliasing to Preact
-  would roughly halve it.
+it.
 
 ## Build phases
 
