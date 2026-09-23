@@ -63,7 +63,7 @@ export function Widget({ apiBase, customerName, clientRouting }: WidgetProps) {
           onKeyDown={(e) => {
             if (e.key === 'Escape') setOpen(false)
           }}
-          className="flex h-[480px] w-[360px] max-w-[calc(100vw-40px)] flex-col overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-xl"
+          className="flex h-[min(480px,calc(100vh-120px))] w-[360px] max-w-[calc(100vw-40px)] flex-col overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-xl"
         >
           <div className="flex items-center justify-between bg-indigo-700 px-4 py-3 text-white">
             <div>
