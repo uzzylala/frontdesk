@@ -15,10 +15,11 @@ of them is visible to the two demo agents in one shared queue.
 ## Stack
 
 - **Frontend:** React + TypeScript, Tailwind CSS, Zustand
-- **Realtime:** Supabase Realtime (Postgres change data capture + Presence)
-- **Database:** Supabase Postgres
-- **Backend:** Vercel
-- **Hosting:** Vercel
+- **Backend:** Vercel serverless functions (thin HTTP layer) +
+  framework-agnostic routing logic (`web/server/`)
+- **Realtime & data:** Supabase (Postgres, Realtime/CDC, Presence,
+  Database Webhooks)
+- **Hosting:** Vercel (frontend + functions), Supabase (database)
 
 ## Layout
 
